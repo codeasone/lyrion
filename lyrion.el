@@ -2481,11 +2481,11 @@ changed while choosing."
     ("a" "Album artists" lyrion-search-album-artists)
     ("g" "Genres" lyrion-search-genres)
     ("w" "Works" lyrion-search-works)
-    ("l" "Playlists" lyrion-search-playlists)
+    ("p" "Playlists" lyrion-search-playlists)
     ("/" "Everything" lyrion-search-all)
     ("q" "Qobuz" lyrion-search-qobuz :if lyrion--qobuz-p)]
    ["Radio"
-    ("p" "Radio Paradise" lyrion-radio-paradise :if lyrion--radio-paradise-p)]
+    ("P" "Radio Paradise" lyrion-radio-paradise :if lyrion--radio-paradise-p)]
    ["Playback"
     ("SPC" "Play or pause" lyrion-play-pause :transient t)
     ("<" "Previous track" lyrion-previous :transient t)

@@ -19,7 +19,7 @@ It shows what a player is playing, searches the library and plays what you pick,
 - A transient menu picks what to search: tracks, releases, album artists, genres, works, playlists or everything. With the server's plugins it also searches Qobuz and plays Radio Paradise's channels.
 - You pick a result with whatever completion UI you use, such as =vertico=. It plays in order or shuffled, or, for an artist, opens their releases so you can choose one.
 - Single keys control playback, the volume, shuffle and repeat, smart crossfading and a sleep timer, and switch between the server's players. [[#keys][Keys]] lists them all.
-- You can see the queue in play order and jump to any track in it.
+- You can inspect the queue in play order and jump to any track in it.
 - =lyrion= can start =squeezelite= so the music plays on this computer. It runs under a stable name and address, so =LMS= keeps the player's settings from one session to the next.
 
 There is no library browser, but searching with =/= goes a long way towards one. The completions cover the whole library, and with a vertical completion UI such as =vertico= you can scroll through it before typing anything, then narrow it by artist, year or other details, as described under [[#searching][Searching]]. With =prescient=, what you played recently or often comes first.
@@ -141,7 +141,7 @@ In the player and in the lyrics:
 #+attr_org: :width 900
 [[file:images/search-menu.png]]
 
-=q= and =p= appear only when the server has the Qobuz or Radio Paradise plugin. The playback keys work in the menu too and keep it open, as does =L= for the lyrics. The volume keys are the exception, since =-= begins the switches.
+=q= and =P= appear only when the server has the Qobuz or Radio Paradise plugin. The playback keys work in the menu too and keep it open, as does =L= for the lyrics. The volume keys are the exception, since =-= begins the switches.
 
 Above the searches, switches choose the categories that everything (=/=) and Qobuz (=q=) include. Each shows as its key and name, lit when on and dimmed when off. All are on at first; press a switch's key to turn it off or on again:
 
@@ -262,7 +262,7 @@ If results come back but nothing plays, open /Settings/, /Advanced/, /Network/ a
 
 * Radio Paradise
 
-When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =p= in the search menu lists its channels, such as Main Mix and Mellow Mix, in the plugin's order. The channel you choose replaces the queue. When a channel has several streams, =lyrion= plays the first, which is the plugin's best, FLAC. That stream also lets the server skip songs.
+When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =P= in the search menu lists its channels, such as Main Mix and Mellow Mix, in the plugin's order. The channel you choose replaces the queue. When a channel has several streams, =lyrion= plays the first, which is the plugin's best, FLAC. That stream also lets the server skip songs.
 
 Each song in the FLAC stream is a block of its own, which =LMS= fetches from Radio Paradise and relays to the player. Each block brings the song's title and cover, so the card follows the songs although the channel stays the same.
 
@@ -341,7 +341,7 @@ A few commands need an answer from the server before they can show anything, and
 |---------------------------+-------------------------------------------------+----------------+----------------|
 | =p=                       | the server's players                            | 0.01 s         | 5 s            |
 | =I=                       | the queue                                       | 0.01 s         | 5 s            |
-| =/= =p=                   | Radio Paradise's channels                       | 0.01 s         | 5 s            |
+| =/= =P=                   | Radio Paradise's channels                       | 0.01 s         | 5 s            |
 | =/= =q=                   | a Qobuz search, which the server asks Qobuz     | 1.2 s          | 15 s           |
 | =/= =t=, =r=, =a=, ...    | the library, listed once a session              | up to 1.6 s    | 30 s           |
 | =M-RET= on an artist      | their releases                                  | 0.04 s         | 5 s            |
