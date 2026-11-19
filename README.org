@@ -91,6 +91,10 @@ To use an existing player, such as a network streamer or a =squeezelite= on anot
 
 =p= switches between players at any time.
 
+#+attr_html: :width 900px
+#+attr_org: :width 900
+[[file:images/players.png]]
+
 To play on this computer:
 
 1. Install =squeezelite=, for example with =sudo apt install squeezelite=.
