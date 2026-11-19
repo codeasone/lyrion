@@ -89,6 +89,18 @@ Either show a player the server already has, or make this computer one.
 
 To use an existing player, such as a network streamer or a =squeezelite= on another machine, leave ~lyrion-player~ =nil= to show whichever is playing, or set it to the player's name.
 
+For example, to show the WiiM Ultra whenever =lyrion= opens:
+
+#+begin_src elisp
+(use-package lyrion
+  ;; ...
+  :custom
+  (lyrion-host "lms.lan")
+  (lyrion-player "WiiM Ultra"))
+#+end_src
+
+The name is the one =LMS= shows, as listed by =p=; case does not matter. A player's id, its MAC address, works too. If no player has that name, the player buffer says so and keeps looking.
+
 =p= switches between players at any time.
 
 #+attr_html: :width 900px
