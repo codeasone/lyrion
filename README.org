@@ -54,6 +54,8 @@ There is no library browser, but searching with =/= goes a long way towards one.
 
 =M-x lyrion= opens the player.
 
+=lyrion= works with any completion interface, but it is made for =vertico=, which I use and recommend. Only with =vertico= do long results fit the window and the selected one scroll, as described under [[#searching][Searching]], and the queue open with the cursor on the track playing. Emacs's built-in =fido-vertical-mode= also lists the results as you type. With Emacs's default completion, matches show only after =TAB=, which is hard going in a large library.
+
 * Getting started
 
 =lyrion= needs an =LMS= it can reach and a player to show.
@@ -196,9 +198,11 @@ Each result has an icon for its kind and some dimmed details:
 
 - a track shows its artist and album;
 - a release shows its artist and year;
-- a work shows its composer, release and album artist.
+- a work shows its composer and release.
 
-The details match what you type too. Where a title has several recordings, =hiromi clair= picks out Hiromi's Clair de Lune. In a release search, an artist's name lists their releases with their years, and a year such as =1983= lists what came out that year.
+The details match what you type too, so typing =hiromi clair= narrows the many recordings of Clair de Lune to Hiromi's. In a release search, an artist's name lists their releases with their years, and a year such as =1983= lists what came out that year.
+
+With =vertico=, a result too wide for the window is shortened with an ellipsis, its details first and then its name. The selected result instead scrolls to its end and back to its start, so you can read it all. Set ~lyrion-search-scroll~ to nil to stop it scrolling. The queue does the same.
 
 Searching everything groups the results in this order: album artists, genres, playlists, releases, works and tracks. Categories you have switched off are left out.
 
@@ -327,6 +331,7 @@ Not supported yet. =lyrion= connects to the server without a user name or passwo
 | ~lyrion-lyrics-select-window~    | ~t~                      | move point into the lyrics when they open                  |
 | ~lyrion-lyrics-hide-empty-lines~ | ~t~                      | leave out lines with no words                              |
 | ~lyrion-qobuz-results~           | ~100~                    | the most Qobuz results shown of each kind                  |
+| ~lyrion-search-scroll~           | ~t~                      | scroll the selected result when too wide (=vertico=)       |
 
 * Known issues
 

@@ -751,14 +751,13 @@ is on two releases, so that it has two recordings.")
   (should (equal (lyrion--candidate-text 'artist '(("artist" . "Arvo Pärt")))
                  "Arvo Pärt")))
 
-(ert-deftest lyrion-test/work-texts-match-the-composer ()
+(ert-deftest lyrion-test/work-texts-show-the-composer-and-release ()
   (should (equal (substring-no-properties
                   (lyrion--candidate-text 'work '(("work" . "China Gates")
                                                   ("composer" . "John Adams")
                                                   ("album" . "Must the Devil")
                                                   ("artist" . "Yuja Wang"))))
-                 "China Gates  John Adams · Must the Devil · Yuja Wang"))
-  ;; An album artist who is the composer is not named twice.
+                 "China Gates  John Adams · Must the Devil"))
   (should (equal (substring-no-properties
                   (lyrion--candidate-text 'work '(("work" . "Für Alina")
                                                   ("composer" . "Arvo Pärt")
@@ -1088,6 +1087,82 @@ Like Prescient, it would sort the rest by length unless told not to."
         (should (equal (car (lyrion--read-item '(release) "Release: ")) 'release)))
       (should-not (alist-get 'group-function
                              (cdr (funcall lyrion-test--table "" nil 'metadata)))))))
+
+;; Fitting results to the window
+
+(defconst lyrion-test--clair
+  (lyrion--with-detail "Clair de Lune" '("Debussy" "Suite bergamasque"))
+  "A result 42 columns wide: a 13-column name and a 27-column detail.")
+
+(ert-deftest lyrion-test/fit-leaves-a-result-that-fits ()
+  (should (eq (lyrion--fit lyrion-test--clair 42) lyrion-test--clair)))
+
+(ert-deftest lyrion-test/fit-shortens-the-detail-then-the-name ()
+  (should (equal (lyrion--fit lyrion-test--clair 30)
+                 "Clair de Lune  Debussy · Suit…"))
+  (should (eq (get-text-property 29 'face (lyrion--fit lyrion-test--clair 30))
+              'lyrion-search-detail))
+  ;; The name keeps half.
+  (should (equal (lyrion--fit lyrion-test--clair 20) "Clair de …  Debussy…"))
+  ;; Too little room for any detail.
+  (should (equal (lyrion--fit lyrion-test--clair 6) "Clair…"))
+  (should (equal (lyrion--fit (lyrion--with-detail "Johann Sebastian Bach" nil)
+                              10)
+                 "Johann Se…")))
+
+(ert-deftest lyrion-test/fit-at-an-offset-shows-the-result-from-there ()
+  (should (equal (lyrion--fit lyrion-test--clair 30 0)
+                 "Clair de Lune  Debussy · Suite"))
+  (should (equal (lyrion--fit lyrion-test--clair 30 12)
+                 "e  Debussy · Suite bergamasque")))
+
+(ert-deftest lyrion-test/scrolling-waits-moves-waits-and-jumps-back ()
+  (let ((lyrion--scroll-pause 1.5)
+        (lyrion--scroll-speed 8))
+    ;; 16 columns take 2 seconds, so each round takes 5.
+    (should (equal (mapcar (lambda (elapsed) (lyrion--scroll-offset elapsed 16))
+                           '(0 1.4 2.5 3.5 4.9 5.2 7.5))
+                   '(0 0 8 16 16 0 8)))))
+
+(defvar vertico--input)
+(defvar vertico--index)
+(defvar vertico--candidates)
+
+(defmacro lyrion-test--in-vertico (width selected candidates &rest body)
+  "Run BODY as if Vertico showed CANDIDATES, SELECTED, in WIDTH columns."
+  (declare (indent 3))
+  `(with-temp-buffer
+     (cl-letf (((symbol-function 'vertico--window-width) (lambda () ,width)))
+       (let ((vertico--input t)
+             (vertico--index ,selected)
+             (vertico--candidates ,candidates))
+         ,@body))))
+
+(ert-deftest lyrion-test/fit-to-window-scrolls-only-the-selected-result ()
+  (let* ((short (lyrion--with-detail "Clair" nil))
+         (texts (list lyrion-test--clair short
+                      (format "%s (2)" lyrion-test--clair)))
+         (affixed (mapcar (lambda (text) (list text "  " "")) texts))
+         (lyrion-search-scroll t)
+         (lyrion--scroll-pause 1.5)
+         (lyrion--scroll-speed 8))
+    ;; 33 columns leave 30 for the result.
+    (lyrion-test--in-vertico 33 0 texts
+      (should (equal (mapcar #'car (lyrion--fit-to-window affixed))
+                     (list "Clair de Lune  Debussy · Suite" short
+                           "Clair de Lune  Debussy · Suit…")))
+      (should (equal (car lyrion--scroll) (car texts)))
+      (should (equal (cddr lyrion--scroll) '(12 0)))
+      ;; Selected a second past the pause, it has moved 8 columns.
+      (setf (nth 1 lyrion--scroll) (- (float-time) 2.5))
+      (should (equal (car (car (lyrion--fit-to-window affixed)))
+                     " Lune  Debussy · Suite bergama"))
+      (let ((lyrion-search-scroll nil))
+        (should (equal (car (car (lyrion--fit-to-window affixed)))
+                       "Clair de Lune  Debussy · Suit…"))
+        (should-not lyrion--scroll)))
+    ;; Without Vertico, results stay as they are.
+    (should (equal (lyrion--fit-to-window affixed) affixed))))
 
 (defun lyrion-test--search-sends-raw (command)
   "Run search COMMAND, with `completing-read' as it is, and return what it sent."

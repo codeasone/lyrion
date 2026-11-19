@@ -153,6 +153,13 @@ just sung stays lit until the next begins."
   "Most results a Qobuz search shows of each kind."
   :type 'natnum)
 
+(defcustom lyrion-search-scroll t
+  "Whether the selected result scrolls, when too long for the window.
+It scrolls to its end and starts over, so the whole of it can be read.
+Results too long for the window are shortened with an ellipsis either
+way. Both need Vertico."
+  :type 'boolean)
+
 (defface lyrion-title '((t :weight bold :height 1.4))
   "Face of the track's title.")
 
@@ -1406,6 +1413,122 @@ which would be slow over a whole library."
                                                            detail)))))
                         detail))))))
 
+(defun lyrion--split-detail (text)
+  "Return TEXT, a result from `lyrion--with-detail', as (MAIN . DETAIL).
+DETAIL is nil when TEXT has none."
+  (if-let* ((space (text-property-not-all 0 (length text) 'display nil text)))
+      (cons (substring text 0 (1- space)) (substring text (1+ space)))
+    (cons text nil)))
+
+(defun lyrion--line (text)
+  "Return TEXT, a result, on one line, its details just after its name."
+  (pcase-let ((`(,main . ,detail) (lyrion--split-detail text)))
+    (if detail (concat main "  " detail) main)))
+
+(defun lyrion--shorten (text width face)
+  "Return TEXT cut to WIDTH columns, ending in an ellipsis in FACE."
+  (truncate-string-to-width text width nil nil (propertize "…" 'face face)))
+
+(defun lyrion--fit (text width &optional offset)
+  "Return TEXT, a result, fitted to WIDTH columns.
+A result too long has its details shortened first, then its name, each
+with an ellipsis; the name keeps at least half of WIDTH. With OFFSET, the
+result is instead laid out in full and shown from that column, to scroll."
+  (let ((line (lyrion--line text)))
+    (cond
+     ((<= (string-width line) width) text)
+     (offset (truncate-string-to-width line (+ offset width) offset))
+     (t (pcase-let* ((`(,main . ,detail) (lyrion--split-detail text))
+                     (room (if detail
+                               (min (string-width main)
+                                    (max (ceiling width 2)
+                                         (- width 2 (string-width detail))))
+                             width))
+                     (left (- width room 2)))
+          (if (and detail (>= left 2))
+              (concat (lyrion--shorten main room nil) "  "
+                      (lyrion--shorten detail left 'lyrion-search-detail))
+            (lyrion--shorten main width nil)))))))
+
+(defvar lyrion--scroll-pause 1.5
+  "Seconds a scrolling result waits at its start and at its end.")
+
+(defvar lyrion--scroll-speed 8
+  "Columns a second a scrolling result moves.")
+
+(defun lyrion--scroll-offset (elapsed span)
+  "Return the column to show a result SPAN columns too long from.
+ELAPSED is the seconds since it was selected. It waits at its start,
+scrolls to its end, waits there, then jumps back and starts over."
+  (let* ((moving (/ span (float lyrion--scroll-speed)))
+         (time (mod elapsed (+ moving (* 2 lyrion--scroll-pause)))))
+    (min span (max 0 (floor (* (- time lyrion--scroll-pause)
+                               lyrion--scroll-speed))))))
+
+(defvar-local lyrion--scroll nil
+  "The selected result while it scrolls, as (TEXT SINCE SPAN OFFSET).
+SINCE is when it was selected, SPAN the columns it is too long by, and
+OFFSET the column it was last shown from.")
+
+(declare-function vertico--window-width "vertico")
+(declare-function vertico--exhibit "vertico")
+(defvar vertico--input)
+(defvar vertico--index)
+(defvar vertico--candidates)
+
+(defun lyrion--fit-to-window (affixed)
+  "Fit AFFIXED, the results an affixation function gives, to the window.
+That needs Vertico, which shows them as returned; other completion
+interfaces, which may take them for what is chosen, get them unchanged.
+The selected result scrolls instead, when `lyrion-search-scroll' says so."
+  (if (not (and (bound-and-true-p vertico--input)
+                (fboundp 'vertico--window-width)))
+      affixed
+    (let ((window (vertico--window-width))
+          (selected (and lyrion-search-scroll (>= vertico--index 0)
+                         (nth vertico--index vertico--candidates)))
+          (scroll nil))
+      (prog1
+          (mapcar
+           (pcase-lambda (`(,text ,prefix ,suffix))
+             ;; Icons can be wider than their characters say; the last
+             ;; column is left for the sign of a line cut short.
+             (let* ((width (- window 1 (string-width suffix)
+                              (ceiling (string-pixel-width prefix)
+                                       (frame-char-width))))
+                    (span (- (string-width (lyrion--line text)) width))
+                    (offset nil))
+               (when (and (> span 0) (equal text selected))
+                 (let ((since (if (equal text (car lyrion--scroll))
+                                  (nth 1 lyrion--scroll)
+                                (float-time))))
+                   (setq offset (lyrion--scroll-offset (- (float-time) since)
+                                                       span)
+                         scroll (list (substring-no-properties text)
+                                      since span offset))))
+               (list (lyrion--fit text width offset) prefix suffix)))
+           affixed)
+        (setq lyrion--scroll scroll)))))
+
+(defun lyrion--scroll-tick (buffer)
+  "Redraw the results in BUFFER, a minibuffer, when it is time to scroll."
+  (when (eq (window-buffer) buffer)
+    (with-current-buffer buffer
+      (pcase lyrion--scroll
+        (`(,_text ,since ,span ,offset)
+         (unless (= offset (lyrion--scroll-offset (- (float-time) since) span))
+           (vertico--exhibit)))))))
+
+(defun lyrion--scroll-start ()
+  "Have the selected result scroll in this minibuffer, until it closes."
+  (when (and lyrion-search-scroll
+             (bound-and-true-p vertico--input)
+             (fboundp 'vertico--exhibit))
+    (let* ((tick (/ 1.0 lyrion--scroll-speed))
+           (timer (run-at-time tick tick #'lyrion--scroll-tick
+                               (current-buffer))))
+      (add-hook 'minibuffer-exit-hook (lambda () (cancel-timer timer)) nil t))))
+
 (defun lyrion--item-name (kind item)
   "Return the name of ITEM, an item of KIND."
   (lyrion--get item (pcase kind
@@ -1438,12 +1561,11 @@ The details are part of it, so they can be matched too."
       ('playlist (lyrion--with-detail (funcall get "playlist") nil))
       ((or 'qobuz-artist 'qobuz-playlist)
        (lyrion--with-detail (funcall get "name") nil))
+      ;; The release tells recordings apart; the album artist, often the
+      ;; composer again, would only crowd the line.
       ('work (lyrion--with-detail (funcall get "work")
                                   (list (funcall get "composer")
-                                        (funcall get "album")
-                                        (unless (equal (funcall get "artist")
-                                                       (funcall get "composer"))
-                                          (funcall get "artist"))))))))
+                                        (funcall get "album")))))))
 
 (defun lyrion--candidates-of (kind items)
   "Return the search results for ITEMS, of KIND, as (TEXTS . TABLE).
@@ -1540,13 +1662,14 @@ artists among KINDS."
                    (let ((key (substring-no-properties text)))
                      (seq-some (lambda (set) (gethash key (cdr set))) sets))))
          (affix (lambda (candidates)
-                  (mapcar (lambda (candidate)
-                            (list candidate
-                                  (concat (lyrion--icon
-                                           (car (funcall lookup candidate)))
-                                          " ")
-                                  ""))
-                          candidates)))
+                  (lyrion--fit-to-window
+                   (mapcar (lambda (candidate)
+                             (list candidate
+                                   (concat (lyrion--icon
+                                            (car (funcall lookup candidate)))
+                                           " ")
+                                   ""))
+                           candidates))))
          (group (lambda (candidate transform)
                   (if transform
                       candidate
@@ -1578,7 +1701,8 @@ artists among KINDS."
                                 (use-local-map
                                  (make-composed-keymap
                                   lyrion-search-minibuffer-map
-                                  (current-local-map)))))
+                                  (current-local-map)))
+                                (lyrion--scroll-start)))
                    (completing-read
                     (format (if (seq-intersection kinds '(artist qobuz-artist))
                                 "%s (S-RET shuffles, M-RET opens an artist): "
@@ -2284,7 +2408,7 @@ An artist or release the server does not know is left out."
 
 (defun lyrion-search-works ()
   "Choose a recording of a work from the library and play it.
-Its composer, release and album artist match too."
+Its composer and release match too."
   (interactive)
   (lyrion--search '(work) "Work"))
 
@@ -2395,7 +2519,6 @@ with its position as `playlist index'. Positions count from 0."
           (lyrion--group reply "playlist index"))))
 
 (declare-function vertico--goto "vertico")
-(declare-function vertico--exhibit "vertico")
 
 (defun lyrion--select-on-open (index)
   "Have Vertico, when it is in use, start with candidate INDEX selected.
@@ -2459,16 +2582,17 @@ staying as it was; choosing the one playing starts it again."
     (unless texts
       (user-error "The queue is empty"))
     (let* ((affix (lambda (candidates)
-                    (mapcar (lambda (candidate)
-                              (list candidate
-                                    (if (eql (gethash (substring-no-properties
-                                                       candidate)
-                                                      positions)
-                                             current)
-                                        "▶ "
-                                      "  ")
-                                    ""))
-                            candidates)))
+                    (lyrion--fit-to-window
+                     (mapcar (lambda (candidate)
+                               (list candidate
+                                     (if (eql (gethash (substring-no-properties
+                                                        candidate)
+                                                       positions)
+                                              current)
+                                         "▶ "
+                                       "  ")
+                                     ""))
+                             candidates))))
            ;; The queue's own order, whatever the completion UI would sort by.
            (table (lambda (string predicate action)
                     (if (eq action 'metadata)
@@ -2479,7 +2603,8 @@ staying as it was; choosing the one playing starts it again."
                       (complete-with-action action texts string predicate))))
            (choice (minibuffer-with-setup-hook
                        (:append (lambda ()
-                                  (when start (lyrion--select-on-open start))))
+                                  (when start (lyrion--select-on-open start))
+                                  (lyrion--scroll-start)))
                      (completing-read
                       (if current
                           (format "Queue (playing %d of %d): "
