@@ -87,7 +87,7 @@ Qobuz takes a different route: the player fetches its audio from Qobuz directly,
 
 Either show a player the server already has, or make this computer one.
 
-To use an existing player, such as a network streamer or a =squeezelite= on another machine, leave ~lyrion-player~ =nil= to show whichever is playing, or set it to the player's name.
+To use an existing player, such as a network streamer or a =squeezelite= on another machine, leave ~lyrion-player~ =nil= to show whichever is playing (the first connected player that is playing, or failing that the first connected one), or set it to the player's name.
 
 For example, to show the WiiM Ultra whenever =lyrion= opens:
 
@@ -101,7 +101,7 @@ For example, to show the WiiM Ultra whenever =lyrion= opens:
 
 The name is the one =LMS= shows, as listed by =p=; case does not matter. A player's id, its MAC address, works too. If no player has that name, the player buffer says so and keeps looking.
 
-=p= switches between players at any time.
+=p= switches between players for the rest of the session. This computer is always on the list, and choosing it starts =squeezelite=.
 
 #+attr_html: :width 900px
 #+attr_org: :width 900
@@ -122,7 +122,9 @@ Its name is ~lyrion-squeezelite-name~, *"Emacs on"* followed by this computer's 
 
 If the player buffer stays on "Waiting for NAME to connect", check that this computer can reach port 3483 on the server; if it connects but plays no sound, check port 9000.
 
-=squeezelite='s own output is in the =*lyrion squeezelite*= buffer.
+=squeezelite='s own output is in the =*lyrion squeezelite*= buffer. If a =squeezelite= with this computer's address is already running, =lyrion= uses it instead of starting another.
+
+=squeezelite= keeps running after the player's buffer is closed, so closing =lyrion= does not stop the music. =M-x lyrion-local-player-stop= stops it, as does killing the =*lyrion squeezelite*= buffer or quitting Emacs.
 
 * Keys
 :PROPERTIES:
@@ -305,14 +307,6 @@ Each song in the FLAC stream is a block of its own, which =LMS= fetches from Rad
 #+attr_html: :width 900px
 #+attr_org: :width 900
 [[file:images/queue.png]]
-
-* Players
-
-With ~lyrion-player~ set to =nil=, =lyrion= shows the first connected player that is playing, or failing that the first connected player. A name or id picks a specific player, and ~local~ starts =squeezelite= and shows this computer.
-
-=p= chooses among the server's players for the rest of the session. This computer is always on the list, and choosing it starts =squeezelite= if it is not running. If a =squeezelite= with this computer's address is already running, =lyrion= uses it instead of starting another.
-
-=squeezelite= keeps running after the player's buffer is closed, so closing =lyrion= does not stop the music. =M-x lyrion-local-player-stop= stops it, as does killing the =*lyrion squeezelite*= buffer or quitting Emacs.
 
 * Crossfading
 
