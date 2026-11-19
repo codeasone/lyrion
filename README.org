@@ -95,6 +95,8 @@ To use an existing player, such as a network streamer or a =squeezelite= on anot
 #+attr_org: :width 900
 [[file:images/players.png]]
 
+The steps below are for Linux. =squeezelite= runs on macOS and Windows too, so they should adapt; pull requests adding instructions for either are welcome.
+
 To play on this computer:
 
 1. Install =squeezelite=, for example with =sudo apt install squeezelite=.
