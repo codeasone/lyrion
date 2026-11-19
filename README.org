@@ -16,10 +16,10 @@ It shows what a player is playing, searches the library and plays what you pick,
 
 - A read-only buffer shows what's playing as a card centred in the window: the cover, track number and title, artist, album and year, a progress bar with the elapsed and total times, the track up next, and the player's name and state.
 - A pane beside the card shows the track's lyrics from =LRCLIB=. With timed lyrics, the line being sung is highlighted and kept in view.
-- A transient menu picks what to search: tracks, releases, album artists, genres, works, playlists or everything. With the server's plugins it also searches Qobuz and plays Radio Paradise's channels.
+- A transient menu picks what to search: tracks, releases, album artists, genres, works, playlists or everything. When the server has the Qobuz or Radio Paradise plugin installed, it also searches Qobuz or plays Radio Paradise's channels.
 - You pick a result with whatever completion UI you use, such as =vertico=. It plays in order or shuffled, or, for an artist, opens their releases so you can choose one.
 - Single keys control playback, the volume, shuffle and repeat, smart crossfading and a sleep timer, and switch between the server's players. [[#keys][Keys]] lists them all.
-- You can inspect the queue in play order and jump to any track in it.
+- You can inspect the queue in play order and jump to any track in it, as described under [[#the-queue][The queue]].
 - =lyrion= can start =squeezelite= so the music plays on this computer. It runs under a stable name and address, so =LMS= keeps the player's settings from one session to the next.
 
 There is no library browser, but searching with =/= goes a long way towards one. The completions cover the whole library, and with a vertical completion UI such as =vertico= you can scroll through it before typing anything, then narrow it by artist, year or other details, as described under [[#searching][Searching]]. With =prescient=, what you played recently or often comes first.
@@ -159,9 +159,9 @@ In the player and in the lyrics:
 #+attr_org: :width 900
 [[file:images/search-menu.png]]
 
-=q= and =P= appear only when the server has the Qobuz or Radio Paradise plugin. The playback keys work in the menu too and keep it open, as does =L= for the lyrics. The volume keys are the exception, since =-= begins the switches.
+=q= and =P= appear only when the server has the Qobuz or Radio Paradise plugin. The playback keys work in the menu too and keep it open, as does =L= for the lyrics.
 
-Above the searches, switches choose the categories that everything (=/=) and Qobuz (=q=) include. Each shows as its key and name, lit when on and dimmed when off. All are on at first; press a switch's key to turn it off or on again:
+Above the searches, switches choose the categories that an /Everything/ search (=/=) and a Qobuz search (=q=) include. Each shows as its key and name, lit when on and dimmed when off. All are on at first; press a switch's key to turn it off or on again:
 
 | Switch | Category                                 |
 |--------+------------------------------------------|
@@ -177,7 +177,7 @@ Switches last only while the menu is open, unless you keep them with one of tran
 - =C-x s= sets them for the rest of this Emacs session.
 - =C-x C-s= saves them for later sessions too, in transient's =transient-values-file=. The menu's heading reminds you of this key.
 
-The single-category searches, =t= to =l=, ignore the switches.
+The switches affect only =/= and =q=. The keys that search one category, such as =t= for tracks or =p= for playlists, always search it, even when its switch is off.
 
 ** Playing what you choose
 :PROPERTIES:
@@ -186,26 +186,26 @@ The single-category searches, =t= to =l=, ignore the switches.
 
 Every search ends in the minibuffer, and the key you choose a result with decides what happens to it. The same three keys work in every search, of the library or of Qobuz:
 
-| Key     | What happens to the result                               |
-|---------+----------------------------------------------------------|
-| =RET=   | it plays, in order                                       |
-| =S-RET= | it plays, shuffled                                       |
-| =M-RET= | an artist opens into their releases, so you can pick one |
+| Key     | What happens to the result                                                     |
+|---------+--------------------------------------------------------------------------------|
+| =RET=   | it plays, in order                                                             |
+| =S-RET= | it plays, shuffled                                                             |
+| =M-RET= | an artist lists their releases to pick from; anything else plays as with =RET= |
 
-What plays depends on the kind of result. =M-RET= only opens artists; on anything else it plays the result as =RET= does.
+What plays depends on the kind of result:
 
-| Result                             | What =RET= and =S-RET= play                                | =M-RET=              |
-|------------------------------------+------------------------------------------------------------+----------------------|
-| a track                            | the track on its own                                       | the same as =RET=    |
-| a release                          | the whole release                                          | the same as =RET=    |
-| an album artist                    | everything by them                                         | lists their releases |
-| a genre                            | everything in it                                           | the same as =RET=    |
-| a work                             | the recording on that release                              | the same as =RET=    |
-| a playlist                         | the whole playlist                                         | the same as =RET=    |
-| a Qobuz artist                     | their songs, as Qobuz finds them for their name, up to 200 | lists their releases |
-| a Qobuz release, track or playlist | the release, track or playlist                             | the same as =RET=    |
+| Result                             | What =RET= and =S-RET= play                                |
+|------------------------------------+------------------------------------------------------------|
+| a track                            | the track on its own                                       |
+| a release                          | the whole release                                          |
+| an album artist                    | everything by them                                         |
+| a genre                            | everything in it                                           |
+| a work                             | the recording on that release                              |
+| a playlist                         | the whole playlist                                         |
+| a Qobuz artist                     | their songs, as Qobuz finds them for their name, up to 200 |
+| a Qobuz release, track or playlist | the release, track or playlist                             |
 
-Among an artist's releases, the keys start afresh: =RET= plays the release you pick and =S-RET= shuffles it. The prompt names the keys as a reminder, and mentions =M-RET= whenever there are artists among the results.
+=M-RET= differs from =RET= only on an artist, from the library or Qobuz: instead of playing them, it lists their releases. Among those, the keys start afresh: =RET= plays the release you pick and =S-RET= shuffles it. The prompt names the keys as a reminder, and mentions =M-RET= whenever there are artists among the results.
 
 * Searching
 :PROPERTIES:
@@ -222,7 +222,7 @@ The details match what you type too, so typing =hiromi clair= narrows the many r
 
 With =vertico=, a result too wide for the window is shortened with an ellipsis, its details first and then its name. The selected result instead scrolls to its end and back to its start, so you can read it all. Set ~lyrion-search-scroll~ to nil to stop it scrolling. The queue does the same.
 
-Searching everything groups the results in this order: album artists, genres, playlists, releases, works and tracks. Categories you have switched off are left out.
+An /Everything/ search groups the results in this order: album artists, genres, playlists, releases, works and tracks. Categories you have switched off are left out.
 
 #+attr_html: :width 900px
 #+attr_org: :width 900
@@ -243,7 +243,7 @@ Results are sorted alphabetically, ignoring case. When =prescient= sorts the com
 
 When the server has the [[https://www.qobuz.com][Qobuz]] plugin, =q= in the search menu searches Qobuz and streams what you choose.
 
-It searches whichever of artists, playlists, releases and tracks are switched on; works and genres exist only in the library. Results are grouped as in an everything search, and each group keeps Qobuz's order, most relevant first. Releases show their artist and year, and tracks their artist and release, as in the library. =lyrion-qobuz-results= sets how many results come back in each group.
+It searches whichever of artists, playlists, releases and tracks are switched on; works and genres exist only in the library. Results are grouped as in an /Everything/ search, and each group keeps Qobuz's order, most relevant first. Releases show their artist and year, and tracks their artist and release, as in the library. =lyrion-qobuz-results= sets how many results come back in each group.
 
 An artist plays their songs: up to 200 tracks that the plugin finds by searching Qobuz for their name, in the order Qobuz ranks them. =M-RET= opens the artist into their releases instead, as described under [[#choosing][Playing what you choose]].
 
@@ -289,6 +289,9 @@ Each song in the FLAC stream is a block of its own, which =LMS= fetches from Rad
 [[file:images/radio-paradise.png]]
 
 * The queue
+:PROPERTIES:
+:CUSTOM_ID: the-queue
+:END:
 
 =I= lists the queue in the order it plays, shuffled or not.
 
