@@ -1,0 +1,23 @@
+%%{init: {"theme": "base", "themeVariables": {"actorBkg": "#000000", "actorBorder": "#000000", "actorTextColor": "#ffffff", "actorLineColor": "#000000", "signalColor": "#000000", "signalTextColor": "#000000", "noteBkgColor": "#eeeeee", "noteBorderColor": "#cccccc", "noteTextColor": "#000000"}, "sequence": {"mirrorActors": false, "noteMargin": 14, "messageAlign": "left", "useMaxWidth": false}}}%%
+sequenceDiagram
+    participant E as lyrion (Emacs)
+    participant L as LMS
+    participant S as squeezelite
+    participant Q as Qobuz
+
+    E->>L: search (CLI, 9090)
+    L->>Q: search (Qobuz API)
+    Q-->>L: results
+    L-->>E: results, in Qobuz's order
+    E->>L: play a release (CLI, 9090)
+    L->>Q: ask for the track's stream (Qobuz API)
+    Q-->>L: a signed address on Qobuz's CDN
+    L->>S: start streaming from that address (SlimProto, 3483)
+    S->>Q: request the audio (HTTPS)
+    Q-->>S: audio, straight from the CDN
+    S->>L: track started (SlimProto, 3483)
+    L-->>E: status (CLI, 9090)
+    E->>L: request the cover (HTTP, 9000, image proxy)
+    L->>Q: fetch the cover (HTTPS)
+    Q-->>L: image
+    L-->>E: cover image

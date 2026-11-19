@@ -1,0 +1,19 @@
+%%{init: {"theme": "base", "themeVariables": {"actorBkg": "#000000", "actorBorder": "#000000", "actorTextColor": "#ffffff", "actorLineColor": "#000000", "signalColor": "#000000", "signalTextColor": "#000000", "noteBkgColor": "#eeeeee", "noteBorderColor": "#cccccc", "noteTextColor": "#000000"}, "sequence": {"mirrorActors": false, "noteMargin": 14, "messageAlign": "left", "useMaxWidth": false}}}%%
+sequenceDiagram
+    participant E as lyrion (Emacs)
+    participant L as LMS
+    participant S as squeezelite
+
+    E->>S: start it<br/>with a name, address and server
+    S->>L: connect (SlimProto, 3483)
+    Note over L,S: LMS adds the player to its list
+    E->>L: find the player and subscribe<br/>to its status (CLI, 9090)
+    E->>L: play a release (CLI, 9090)
+    L->>S: start streaming (SlimProto, 3483)
+    S->>L: request the audio (HTTP, 9000)
+    L-->>S: audio
+    S->>L: track started (SlimProto, 3483)
+    L-->>E: status, 0.3 s after the change (CLI, 9090)
+    E->>L: request the cover, if it changed (HTTP, 9000)
+    L-->>E: cover image
+    Note over E,S: Later tracks: squeezelite fetches the audio ahead, while the last one plays.<br/>The status, and with it the cover, follow when the track starts.

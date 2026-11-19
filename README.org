@@ -1,0 +1,335 @@
+#+title: lyrion
+
+[[https://github.com/codeasone/lyrion/actions/workflows/test.yml][https://github.com/codeasone/lyrion/actions/workflows/test.yml/badge.svg]] [[https://www.gnu.org/software/emacs/][https://img.shields.io/badge/Emacs-30.1%2B-7F5AB6.svg]] [[file:LICENSE][https://img.shields.io/badge/licence-CC0--1.0-lightgrey.svg]]
+
+A minimal Emacs front end for a [[https://lyrion.org][Lyrion Music Server]] (=LMS=).
+
+It shows what a player is playing, searches the library and plays what you pick, and controls playback on any of the server's players or on this computer.
+
+#+attr_html: :width 800px
+#+attr_org: :width 800
+[[file:images/screenshot.png]]
+
+=lyrion= is not affiliated with or endorsed by the Lyrion Music Server project.
+
+* What it does
+
+- A read-only buffer shows what's playing as a card centred in the window: the cover, track number and title, artist, album and year, a progress bar with the elapsed and total times, the track up next, and the player's name and state.
+- A pane beside the card shows the track's lyrics from =LRCLIB=. With timed lyrics, the line being sung is highlighted and kept in view.
+- A transient menu picks what to search: tracks, releases, album artists, genres, works, everything, or Qobuz when the server has its plugin. It also offers Radio Paradise's channels when the server has that plugin. Switches choose the categories that everything and Qobuz include. The minibuffer then completes among them with whatever completion UI you use, such as =vertico=, and plays your choice in order or shuffled.
+- Single keys play or pause, go to the previous or next track, skip back or forward within a track, turn the volume up or down, turn shuffle on or off, shuffle afresh or play the queue in order, change the repeat mode, turn smart crossfading on or off, set a sleep timer, and switch between the server's players.
+- You can see the queue in play order and jump to any track in it.
+- =lyrion= can start =squeezelite= so the music plays on this computer. It runs under a stable name and address, so =LMS= keeps the player's settings from one session to the next.
+
+There is no library browser, but searching with =/= goes a long way towards one. The completions cover the whole library, and with a vertical completion UI such as =vertico= you can scroll through it before typing anything, then narrow it by artist, year or other details, as described under [[#searching][Searching]]. With =prescient=, what you played recently or often comes first.
+
+* Design
+
+- =lyrion= is one file and needs nothing beyond Emacs 30 or later and its built-in =transient=. If =nerd-icons= is installed, it uses it for icons.
+- The server owns the queue. =LMS= keeps each player's queue, shuffle, repeat and crossfade settings. =lyrion= shows whether shuffle, repeat, crossfade and the sleep timer are on, and shows the queue when asked, fetching it afresh each time; it keeps no copy of its own. Choosing something to play replaces the queue on the server, and the next and previous keys move through it there. =lyrion= does not edit the queue: to change it, choose something else to play.
+- Nothing is polled. =lyrion= keeps one connection open to the server's CLI on port 9090 (=LMS= calls it a command-line interface, though it is a line-based text protocol over TCP, not a shell command line) and subscribes to the player's status. The server sends the full status whenever anything changes, and Emacs counts the elapsed time in between.
+- Covers come from the server's web port and lyrics from =LRCLIB= over TLS. Both are fetched with a few lines of HTTP/1.0 over network processes rather than =url.el=, and every request has a timeout.
+- Search lists the library once a session, on separate connections, starting in the background when the menu opens, so it never holds up the now-playing card.
+- The player and the lyrics are =special-mode= buffers: single keys run commands, and there is nothing to edit. The same keys work in both.
+- Everything is meant to be done from the keyboard, and =?= lists every key. Mouse support is not a goal; whatever a click happens to do comes from Emacs itself.
+
+#+attr_html: :width 900px
+#+attr_org: :width 900
+[[file:images/dispatch.png]]
+
+* Install
+
+#+begin_src elisp
+(use-package lyrion
+  :vc (:url "https://github.com/codeasone/lyrion" :rev :newest)
+  :custom
+  (lyrion-host "lms.lan")
+  ;; Play on this computer, through squeezelite.
+  (lyrion-player 'local)
+  ;; Full volume, so the system volume keys set the level.
+  (lyrion-local-volume 100))
+#+end_src
+
+=M-x lyrion= opens the player.
+
+* Getting started
+
+=lyrion= needs an =LMS= it can reach and a player to show.
+
+** The server
+:PROPERTIES:
+:CUSTOM_ID: the-server
+:END:
+
+Set ~lyrion-host~ to the server's host name or address.
+
+=LMS= listens on three ports, shown here with their defaults. If your server uses others for the CLI or the web server, set ~lyrion-cli-port~ or ~lyrion-http-port~.
+
+| Port | What =LMS= serves there                                        | Used by                                |
+|------+----------------------------------------------------------------+----------------------------------------|
+| 9090 | the CLI: commands, and status sent as it changes               | =lyrion=                               |
+| 9000 | its web server: the web interface, JSON-RPC, covers, and audio | =lyrion= for covers; players for audio |
+| 3483 | [[https://wiki.lyrion.org/index.php/SlimProto_TCP_protocol.html][SlimProto]], which tells players what to play and when           | players, such as =squeezelite=         |
+
+A player connects on 3483 and waits there for commands. When told to play, it fetches the audio over HTTP from 9000, then tells the server when the track starts. The server sends =lyrion= the new status 0.3 s later, and =lyrion= fetches the cover if it has changed. =lyrion= never handles the audio itself. Qobuz is the exception to the route the audio takes: the player fetches it from Qobuz directly, as shown under [[#qobuz][Qobuz]].
+
+#+attr_html: :width 572px
+#+attr_org: :width 572
+[[file:images/ports.png]]
+
+** A player
+
+Either show a player the server already has, or make this computer one.
+
+To use an existing player, such as a network streamer or a =squeezelite= on another machine, leave ~lyrion-player~ =nil= to show whichever is playing, or set it to the player's name.
+
+=p= switches between players at any time.
+
+To play on this computer:
+
+1. Install =squeezelite=, for example with =sudo apt install squeezelite=.
+2. If the package enabled its own system service, disable it with =sudo systemctl disable --now squeezelite=. The service would run a second player that may hold the sound card.
+3. =squeezelite -l= lists the output devices. If the default does not play, pass one through ~lyrion-squeezelite-arguments~, such as =("-o" "pulse")=.
+4. Set ~lyrion-player~ to ~local~ and run =M-x lyrion=.
+
+You do not need to add the player to =LMS=: as the [[#the-server][sequence diagram]] above shows, it joins the server's list when it connects.
+
+Its name is ~lyrion-squeezelite-name~, *"Emacs on"* followed by this computer's host name by default. Its address derives from the name, so the server keeps its settings, such as volume and ReplayGain, between sessions. A new name makes a new player.
+
+If the player buffer stays on "Waiting for NAME to connect", check that this computer can reach port 3483 on the server; if it connects but plays no sound, check port 9000.
+
+=squeezelite='s own output is in the =*lyrion squeezelite*= buffer.
+
+* Keys
+
+In the player and in the lyrics:
+
+| Key     | Action                                                     |
+|---------+------------------------------------------------------------|
+| =SPC=   | play or pause                                              |
+| =<= =>= | previous or next track in the queue                        |
+| =←= =→= | skip back or forward ~lyrion-skip-seconds~                 |
+| =+= =-= | volume up or down ~lyrion-volume-step~, or ~=~ for up      |
+| =p=     | choose the player                                          |
+| =S=     | turn shuffle on or off; the track playing carries on       |
+| =S-RET= | shuffle the queue afresh and play its first new track      |
+| =O=     | play the queue in order, from its first track              |
+| =R=     | cycle repeat through off, track and all                    |
+| =X=     | turn smart crossfading on or off                           |
+| =/=     | search the library or Qobuz and play                       |
+| =L=     | show or hide the lyrics                                    |
+| =C=     | copy the lyrics shown, without times or empty lines        |
+| =w=     | copy the track as "Artist - Release - Title"               |
+| =Z=     | sleep in 15 to 90 minutes, fading out, or cancel it        |
+| =I=     | inspect the queue, in play order, and jump to a track      |
+| =g=     | reconnect (player) or fetch the lyrics again (lyrics)      |
+| =q=     | hide the lyrics, or bury the player                        |
+| =?=     | show every key in a menu, with repeat, crossfade and sleep |
+
+=/= opens a transient menu:
+
+#+attr_html: :width 900px
+#+attr_org: :width 900
+[[file:images/search-menu.png]]
+
+| Key | Offers                  |
+|-----+-------------------------|
+| =t= | tracks                  |
+| =r= | releases                |
+| =a= | album artists           |
+| =g= | genres                  |
+| =w= | works                   |
+| =/= | everything              |
+| =q= | Qobuz                   |
+| =p= | Radio Paradise channels |
+
+=q= and =p= appear only when the server has the Qobuz or Radio Paradise plugin. The playback keys work in the menu too and keep it open, as does =L= for the lyrics. The volume keys are the exception, since =-= begins the switches.
+
+Above the searches, switches choose the categories that everything (=/=) and Qobuz (=q=) include. Each shows as its key and name, lit when on and dimmed when off. All are on at first; press a switch's key to turn it off or on again:
+
+| Switch | Category                                 |
+|--------+------------------------------------------|
+| =-a=   | artists: album artists, or Qobuz artists |
+| =-g=   | genres (library only)                    |
+| =-p=   | playlists                                |
+| =-r=   | releases                                 |
+| =-w=   | works (library only)                     |
+| =-t=   | tracks                                   |
+
+Switches last only while the menu is open, unless you keep them with one of transient's own keys, which work in any transient menu:
+
+- =C-x s= sets them for the rest of this Emacs session.
+- =C-x C-s= saves them for later sessions too, in transient's =transient-values-file=. The menu's heading reminds you of this key.
+
+The single-category searches, =t= to =w=, ignore the switches.
+
+In the minibuffer, =RET= plays the choice in order and =S-RET= plays it shuffled. A track plays on its own, a release plays in full, an album artist plays everything by them, a genre plays everything in it, a playlist plays in full, and a work plays as recorded on its release.
+
+* Searching
+:PROPERTIES:
+:CUSTOM_ID: searching
+:END:
+
+Each result has an icon for its kind, followed by dimmed details: artist and album for a track, artist and year for a release, and composer, release and album artist for a work. The details match too, so where a title has several recordings, =hiromi clair= picks out Hiromi's Clair de Lune. In a release search, an artist's name lists their releases with their years, and a year, such as =1983=, lists what came out that year. Searching everything groups the results into album artists, then genres, then playlists, then releases, then works, then tracks, leaving out any category switched off.
+
+#+attr_html: :width 900px
+#+attr_org: :width 900
+[[file:images/search.png]]
+
+How well search works depends heavily on the quality of your collection's metadata and tags.
+
+A work recorded on several releases gives one result per release, so each recording can be chosen. Works need =LMS= 9 or later.
+
+Results are sorted alphabetically, ignoring case. When =prescient= sorts the completions, recent and frequent choices come first; its length rule is turned off, as length means little for music. When two results have the same text, a number tells them apart.
+
+=lyrion= lists the library once a session. Press =g= in the player to list it again at the next search.
+
+* Qobuz
+:PROPERTIES:
+:CUSTOM_ID: qobuz
+:END:
+
+When the server has the [[https://www.qobuz.com][Qobuz]] plugin, the search menu also offers =q=, which searches Qobuz and streams what you choose. It searches the categories switched on that Qobuz has: artists, playlists, releases and tracks. Works and genres are the library's alone. Results are grouped in the same order as everything's, and each group keeps Qobuz's order, most relevant first. Releases show their artist and year, and tracks their artist and release, as in the library. Choosing an artist then offers their releases to choose from. =lyrion-qobuz-results= sets how many results come back for each category.
+
+=lyrion= asks the server whether it has the plugin the first time the search menu opens in a session, and waits up to two seconds for the answer. If the server does not answer in time, it asks again at the next search. If you install the plugin while =lyrion= is running, press =g= in the player to ask again.
+
+The audio does not pass through =LMS=. For each track, =LMS= asks Qobuz for a signed address on Qobuz's content delivery network, and the player streams from there over HTTPS. Covers come from Qobuz through =LMS='s image proxy.
+
+#+attr_html: :width 800px
+#+attr_org: :width 800
+[[file:images/qobuz.png]]
+
+** Setting up the plugin
+
+You need a Qobuz subscription. In the =LMS= web interface:
+
+1. Open /Settings/, then /Manage Plugins/. =LMS= downloads its list of plugins from the =LMS= community's repository on GitHub.
+2. Find Qobuz under /Streaming Services/, or type its name in the search box. Tick it, apply the change and let =LMS= restart.
+3. Open the Qobuz plugin's settings and sign in with your Qobuz account.
+4. Set the options below, and save.
+
+These settings suit =lyrion=. Leave the others at their defaults.
+
+| Setting                                  | Value       | Why                                                                                                                                                     |
+|------------------------------------------+-------------+---------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Import                                   | No          | Imported Qobuz favourites would join the library and appear among library results.                                                                      |
+| Play samples                             | off         | A track Qobuz will not stream would otherwise play as a 30-second sample, marked only by an asterisk.                                                   |
+| Show Release Year with Albums            | Yes         | Releases then show their year in the results.                                                                                                           |
+| Show Composer with Artist                | Yes         | Classical results then name the composer as well as the performers.                                                                                     |
+| Show recording version with track titles | Yes         | Track titles then tell remasters and live recordings apart.                                                                                             |
+| Hide AI-generated releases               | on          | Generated albums stay out of the results.                                                                                                               |
+| Preferred format                         | your choice | It applies to every player, and a player can only lower it. To cap this computer at CD quality, set ~lyrion-squeezelite-arguments~ to =("-r" "44100")=. |
+
+If results come back but nothing plays, open /Settings/, /Advanced/, /Network/ and check /Web proxy/. Unless you use a proxy, it must be empty. A value such as =http://192.168.1.10:9000= stops =LMS= fetching any stream over plain HTTP, including Radio Paradise's.
+
+* Radio Paradise
+
+When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =p= in the search menu lists its channels, such as Main Mix and Mellow Mix, in the plugin's order. The channel you choose replaces the queue. A channel with several streams plays the first one, the plugin's best: FLAC, which also lets the server skip songs.
+
+Each song in the FLAC stream is a block of its own, which =LMS= fetches from Radio Paradise and relays to the player. Each block brings the song's title and cover, so the card follows the songs although the channel stays the same.
+
+#+attr_html: :width 762px
+#+attr_org: :width 762
+[[file:images/radio-paradise.png]]
+
+* The queue
+
+=I= lists the queue in the order it plays, shuffled or not, with the track playing marked ▶. Each line has the track's position, title, artist and album, all of which match, so =12.= finds the twelfth track and =planet= any title with that word. =RET= plays the chosen track where it stands: the queue is not loaded again or reshuffled. The list keeps the queue's order, whatever sort the completion interface would use.
+
+#+attr_html: :width 900px
+#+attr_org: :width 900
+[[file:images/queue.png]]
+
+* Players
+
+With ~lyrion-player~ set to =nil=, =lyrion= shows the first connected player that is playing, or failing that the first connected player. A name or id picks a specific player, and ~local~ starts =squeezelite= and shows this computer. =p= chooses among the server's players for the rest of the session. This computer is always on the list, and choosing it starts =squeezelite= if it is not running. If a =squeezelite= with this computer's address is already running, =lyrion= uses it instead of starting another.
+
+=squeezelite= keeps running after the player's buffer is closed, so closing =lyrion= does not stop the music. =M-x lyrion-local-player-stop= stops it, as does killing the =*lyrion squeezelite*= buffer or quitting Emacs.
+
+* Crossfading
+
+=X= turns smart crossfading on or off. In =LMS='s words, "successive tracks played from the same album will not use the Crossfade setting", so albums stay gapless. Before =LMS= 9.2, it may not fade where one album runs into the next either. The fade's length is the player's own setting, shown in the player line, as in /smart crossfade 10 s/; change it in the player's audio settings in the =LMS= web interface.
+
+* Lyrics
+
+=lyrion= fetches lyrics from [[https://lrclib.net][LRCLIB]] only while the lyrics are shown, sending the track's artist, title, album and length. It asks for an exact match first; failing that, it takes the search result closest in length, within ten seconds. Answers, misses included, are kept for the session. Failed requests are not, so =g= tries again.
+
+* Authentication
+
+Not supported yet. =lyrion= connects to the server without a user name or password, which suits a server on a home network with password protection off. The design allows for it, though: =LMS='s CLI accepts =login USER PASSWORD= as its first command, and its web port accepts basic authentication, so both connections could log in when a password is set.
+
+* Options
+
+| Option                           | Default                  | Meaning                                                    |
+|----------------------------------+--------------------------+------------------------------------------------------------|
+| ~lyrion-host~                    | ="localhost"=            | the server                                                 |
+| ~lyrion-cli-port~                | ~9090~                   | its CLI                                                    |
+| ~lyrion-http-port~               | ~9000~                   | its web interface, for covers                              |
+| ~lyrion-player~                  | ~nil~                    | a player's name or id, ~local~, or nil for the one playing |
+| ~lyrion-squeezelite-program~     | ="squeezelite"=          | the program that makes this computer a player              |
+| ~lyrion-squeezelite-name~        | ="Emacs on HOST"=        | this computer's player's name; its address derives from it |
+| ~lyrion-squeezelite-arguments~   | ~nil~                    | further arguments, such as =("-o" "pulse")=                |
+| ~lyrion-squeezelite-idle-close~  | ~5~                      | seconds of silence before the sound device is released     |
+| ~lyrion-local-volume~            | ~nil~                    | volume set on this computer's player when it starts        |
+| ~lyrion-skip-seconds~            | ~10~                     | seconds the arrow keys skip                                |
+| ~lyrion-volume-step~             | ~5~                      | the volume change per key press, out of 100                |
+| ~lyrion-cover-size~              | ~32~                     | the cover's longest side, in em                            |
+| ~lyrion-progress-width~          | ~32~                     | the progress bar's width, in columns                       |
+| ~lyrion-reconnect-delay~         | ~5~                      | seconds to wait before reconnecting after a drop           |
+| ~lyrion-lyrics-url~              | ~https://lrclib.net/api~ | where the lyrics come from                                 |
+| ~lyrion-lyrics-side~             | ~right~                  | the side the lyrics open on                                |
+| ~lyrion-lyrics-size~             | ~0.33~                   | their share of the frame                                   |
+| ~lyrion-lyrics-select-window~    | ~t~                      | move point into the lyrics when they open                  |
+| ~lyrion-lyrics-hide-empty-lines~ | ~t~                      | leave out lines with no words                              |
+| ~lyrion-qobuz-results~           | ~100~                    | the most Qobuz results shown of each kind                  |
+
+* Known issues
+
+A few commands need an answer from the server before they can show anything, and Emacs waits for it. On a home network most waits are too short to notice. These are the times measured against my own server, =LMS= 9.1.2:
+
+| Command                | Waits for                                   | Typical wait | Gives up after |
+|------------------------+---------------------------------------------+--------------+----------------|
+| =p=                    | the server's players                        | 0.01 s       | 5 s            |
+| =I=                    | the queue                                   | 0.01 s       | 5 s            |
+| =/= =p=                | Radio Paradise's channels                   | 0.01 s       | 5 s            |
+| =/= =q=                | a Qobuz search, which the server asks Qobuz | 1.2 s        | 15 s           |
+| =/= =t=, =r=, =a=, ... | the library, listed once a session          | up to 1.6 s  | 30 s           |
+
+The library is listed in the background as soon as the search menu opens, so it is usually ready by the time you choose what to search.
+
+A wait is noticeable only when the server stops answering. After a second, the echo area says what =lyrion= is waiting for, and =C-g= stops the wait at once. When =lyrion= already knows that the connection is down, it says so straight away instead of waiting.
+
+* Tested on
+
+=lyrion= has only been tested on my own system, described below. Elsewhere it may need changes.
+
+| Part          | What I use                                                                              |
+|---------------+-----------------------------------------------------------------------------------------|
+| Desktop       | Linux Mint 22.3, kernel 7.0, X11                                                        |
+| Emacs         | GNU Emacs 30.2 (GTK3, native compilation), with =vertico=, =prescient= and =nerd-icons= |
+| Sound         | PipeWire 1.0.5, through its PulseAudio server                                           |
+| =squeezelite= | 1.9.9                                                                                   |
+| Server        | =LMS= 9.1.2, the =lmscommunity/lyrionmusicserver= Docker image on Debian 12             |
+| Players       | this computer, through =squeezelite=, and a [[https://www.wiimhome.com/wiimultra/overview][WiiM Ultra]]                                  |
+
+I haven't tried it on macOS, Windows or Wayland, with a completion interface other than =vertico=, or with a server older than =LMS= 9. CI runs the tests against a fake server on Emacs 30.1, the oldest version =lyrion= supports.
+
+* AI assistance
+
+=lyrion= was developed with Claude Opus 5.5 in Claude Code: it wrote the code, the tests and most of this documentation. I set the design, used my discernment to guide the implementation and the quality checks, reviewed the code, and tested it against my own =LMS= server.
+
+I never intended to share "AI-written" work on my GitHub profile, but =lyrion= has worked out so nicely that I feel compelled to.
+
+If it serves no other purpose than to inspire remixes of your own, that's reason enough.
+
+* Licence
+
+=lyrion= is dedicated to the public domain under [[https://creativecommons.org/publicdomain/zero/1.0/][CC0 1.0 Universal]]: use it, change it and share it however you like, with no need to ask or credit anyone. No copyright is claimed, since the code was written by an AI model; where the law does not allow a waiver, CC0 grants the same freedoms as a licence. The full text is in =LICENSE=.
+
+* Development
+
+=make test= runs the test suite. =make lint= byte-compiles with warnings as errors and runs =checkdoc=.
+
+Both run Emacs headless, with no display or input. The tests talk to a fake server on loopback ports, so you don't need a real =LMS=. On every push and pull request, GitHub Actions runs both on Emacs 30.1.
+
+The sequence diagrams are drawn from =images/ports.mmd=, =images/qobuz.mmd= and =images/radio-paradise.mmd=. After changing one, render it again with =mmdc -i images/NAME.mmd -o images/NAME.png -b white -s 2=.

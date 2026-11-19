@@ -1,0 +1,22 @@
+%%{init: {"theme": "base", "themeVariables": {"actorBkg": "#000000", "actorBorder": "#000000", "actorTextColor": "#ffffff", "actorLineColor": "#000000", "signalColor": "#000000", "signalTextColor": "#000000", "noteBkgColor": "#eeeeee", "noteBorderColor": "#cccccc", "noteTextColor": "#000000"}, "sequence": {"mirrorActors": false, "noteMargin": 14, "messageAlign": "left", "useMaxWidth": false}}}%%
+sequenceDiagram
+    participant E as lyrion (Emacs)
+    participant L as LMS
+    participant S as squeezelite
+    participant R as Radio Paradise
+
+    E->>L: list the channels, then the chosen one's streams (CLI, 9090)
+    E->>L: play the channel's FLAC stream (CLI, 9090)
+    loop each song, a FLAC block of its own
+        L->>S: start streaming (SlimProto, 3483)
+        S->>L: request the audio (HTTP, 9000)
+        L->>R: fetch the song's block (HTTPS)
+        R-->>L: FLAC
+        L-->>S: audio, relayed
+        L-->>E: status: the song's title and cover (CLI, 9090)
+        E->>L: request the cover (HTTP, 9000, image proxy)
+        L->>R: fetch the cover (HTTP)
+        R-->>L: image
+        L-->>E: cover image
+    end
+    Note over E,R: Skipping a song stops its block and opens the next.
