@@ -925,6 +925,7 @@ is on two releases, so that it has two recordings.")
                       ("\"a\"" lyrion-search-album-artists)
                       ("\"w\"" lyrion-search-works)
                       ("\"g\"" lyrion-search-genres)
+                      ("\"l\"" lyrion-search-playlists)
                       ("\"/\"" lyrion-search-all)))
       (should (string-search (car suffix) layout))
       (should (string-search (symbol-name (cadr suffix)) layout))))
@@ -1121,6 +1122,89 @@ Like Prescient, it would sort the rest by length unless told not to."
                                     (equal (car words) "02:00:00:00:00:01"))
                                   (cddr lyrion-test--received)))))))
 
+(defun lyrion-test--search-choosing (command choices)
+  "Run search COMMAND, answering each prompt from CHOICES in turn.
+Each choice is (PREFIX . KEY): the result starting PREFIX, accepted with
+RET when KEY is nil, else as S-RET (`shuffle') or M-RET (`open') would.
+Return (PROMPTS QUERIES SENT): the prompts shown, the queries sent on
+connections of their own, and the commands sent for the player."
+  (lyrion-test--with-fresh-library
+    (lyrion-test--with-server #'lyrion-test--answer
+      (lyrion-test--with-player
+        (should (lyrion-test--wait (lambda () (lyrion-test--shows "Für Alina"))))
+        (let ((prompts nil))
+          (cl-letf (((symbol-function 'message) #'ignore)
+                    ((symbol-function 'completing-read)
+                     (lambda (prompt table &rest _)
+                       (pcase-let ((`(,prefix . ,key) (pop choices)))
+                         (push prompt prompts)
+                         (pcase key
+                           ('shuffle (setq lyrion--shuffle-chosen t))
+                           ('open (setq lyrion--open-chosen t)))
+                         (substring-no-properties
+                          (seq-find (lambda (text) (string-prefix-p prefix text))
+                                    (all-completions "" table)))))))
+            (funcall command))
+          (should (lyrion-test--wait
+                   (lambda () (= 2 (cl-count "02:00:00:00:00:01"
+                                             (cddr lyrion-test--received)
+                                             :key #'car :test #'equal)))))
+          (list (nreverse prompts)
+                (seq-remove (lambda (words)
+                              (member (car words)
+                                      '("02:00:00:00:00:01" "players"
+                                        "subscribe")))
+                            lyrion-test--received)
+                (mapcar #'cdr (seq-filter (lambda (words)
+                                            (equal (car words)
+                                                   "02:00:00:00:00:01"))
+                                          (cddr lyrion-test--received)))))))))
+
+(ert-deftest lyrion-test/an-opened-artist-offers-their-releases ()
+  "M-RET on an album artist lists their releases, and RET then plays one."
+  (pcase-let ((`(,prompts ,queries ,sent)
+               (lyrion-test--search-choosing #'lyrion-search-album-artists
+                                             '(("Arvo Pärt" . open)
+                                               ("Alina")))))
+    (should (member '("albums" "0" "100000" "artist_id:9" "sort:yearalbum"
+                      "tags:lay")
+                    queries))
+    (should (equal (cadr prompts) "Release by Arvo Pärt (S-RET shuffles): "))
+    (should (equal sent '(("playlist" "shuffle" "0")
+                          ("playlistcontrol" "cmd:load" "album_id:31"))))))
+
+(ert-deftest lyrion-test/an-opened-artist-release-can-be-shuffled ()
+  (pcase-let ((`(,_ ,_ ,sent)
+               (lyrion-test--search-choosing #'lyrion-search-album-artists
+                                             '(("Arvo Pärt" . open)
+                                               ("Alina" . shuffle)))))
+    (should (equal sent '(("playlist" "shuffle" "1")
+                          ("playlistcontrol" "cmd:load" "album_id:31"))))))
+
+(ert-deftest lyrion-test/opening-anything-else-plays-it ()
+  "M-RET on what is not an artist plays it, as RET does."
+  (pcase-let ((`(,_ ,queries ,sent)
+               (lyrion-test--search-choosing #'lyrion-search-releases
+                                             '(("Alina" . open)))))
+    (should-not (seq-find (lambda (words)
+                            (seq-find (lambda (word)
+                                        (string-prefix-p "artist_id:" word))
+                                      words))
+                          queries))
+    (should (equal sent '(("playlist" "shuffle" "0")
+                          ("playlistcontrol" "cmd:load" "album_id:31"))))))
+
+(ert-deftest lyrion-test/the-prompt-names-the-keys ()
+  "The prompt names M-RET only where there are artists to open."
+  (let ((first-prompt (lambda (command choice)
+                        (caar (lyrion-test--search-choosing
+                               command (list (list choice)))))))
+    (should (equal (funcall first-prompt #'lyrion-search-album-artists
+                            "Al Green")
+                   "Album artist (S-RET shuffles, M-RET opens an artist): "))
+    (should (equal (funcall first-prompt #'lyrion-search-tracks "Für Alina")
+                   "Track (S-RET shuffles): "))))
+
 (ert-deftest lyrion-test/a-chosen-track-plays-alone ()
   (should (equal (lyrion-test--search-sends #'lyrion-search-tracks "Für Alina")
                  '(("playlist" "shuffle" "0")
@@ -1140,6 +1224,12 @@ Like Prescient, it would sort the rest by length unless told not to."
   (should (equal (lyrion-test--search-sends #'lyrion-search-genres "Soul")
                  '(("playlist" "shuffle" "0")
                    ("playlistcontrol" "cmd:load" "genre_id:4")))))
+
+(ert-deftest lyrion-test/a-chosen-playlist-plays-it ()
+  (should (equal (lyrion-test--search-sends #'lyrion-search-playlists
+                                            "Sunday Morning")
+                 '(("playlist" "shuffle" "0")
+                   ("playlistcontrol" "cmd:load" "playlist_id:71")))))
 
 (ert-deftest lyrion-test/a-chosen-work-plays-that-recording ()
   (should (equal (lyrion-test--search-sends #'lyrion-search-works
@@ -1242,18 +1332,20 @@ Like Prescient, it would sort the rest by length unless told not to."
     (should-not (lookup-key map (kbd "P")))
     (should (eq (lookup-key map (kbd "R")) #'lyrion-repeat))))
 
-(ert-deftest lyrion-test/shuffle-plays-the-first-track-it-chose ()
+(ert-deftest lyrion-test/shuffle-starts-a-new-order-from-the-top ()
   "Setting shuffle on, even when it is on, has the server shuffle again.
-The server puts the track playing first, so play moves on to the second."
+The server puts the track playing first, so play moves on to the second,
+and a second shuffle then puts that one first, the old one among the rest."
   (lyrion-test--with-server #'lyrion-test--answer
     (lyrion-test--with-player
       (should (lyrion-test--wait (lambda () (lyrion-test--shows "Für Alina"))))
       (lyrion-shuffle)
       (should (lyrion-test--wait
-               (lambda () (= 2 (length (lyrion-test--commands-after-subscribing))))))
+               (lambda () (= 3 (length (lyrion-test--commands-after-subscribing))))))
       (should (equal (lyrion-test--commands-after-subscribing)
                      '(("02:00:00:00:00:01" "playlist" "shuffle" "1")
-                       ("02:00:00:00:00:01" "playlist" "index" "1")))))))
+                       ("02:00:00:00:00:01" "playlist" "index" "1")
+                       ("02:00:00:00:00:01" "playlist" "shuffle" "1")))))))
 
 (ert-deftest lyrion-test/play-in-order-starts-the-queue-again ()
   (lyrion-test--with-server #'lyrion-test--answer
@@ -1450,11 +1542,11 @@ track plays it where it is, without loading the queue again."
                            metadata (cdr (funcall table "" nil 'metadata)))
                      (car (last texts)))))
           (lyrion-queue))
-        (should (equal prompt "Queue (track 2 of 3): "))
+        (should (equal prompt "Queue (playing 2 of 3): "))
         (should (equal (mapcar #'substring-no-properties texts)
-                       '("1. Für Alina  Arvo Pärt · Alina"
-                         "2. Spiegel im Spiegel  Arvo Pärt · Alina"
-                         "3. Let's Stay Together  Al Green · Let's Stay Together")))
+                       '("Für Alina  Arvo Pärt · Alina"
+                         "Spiegel im Spiegel  Arvo Pärt · Alina"
+                         "Let's Stay Together  Al Green · Let's Stay Together")))
         (should (eq (alist-get 'display-sort-function metadata) 'identity))
         (should (equal (mapcar #'cadr (funcall (alist-get 'affixation-function
                                                           metadata)
@@ -1466,6 +1558,82 @@ track plays it where it is, without loading the queue again."
         (should (lyrion-test--wait sent))
         (should (equal (funcall sent)
                        '(("02:00:00:00:00:01" "playlist" "index" "2"))))))))
+
+(ert-deftest lyrion-test/a-track-queued-twice-is-told-apart ()
+  "Without positions, the second copy of a track gets a number of its own,
+and choosing it plays that copy."
+  (lyrion-test--with-server
+      (lambda (words)
+        (if (equal (cdr words) '("status" "0" "100000" "tags:al"))
+            (lyrion--encode
+             (append words
+                     '("playlist_cur_index:0" "playlist_tracks:2"
+                       "playlist index:0" "id:501" "title:Für Alina"
+                       "artist:Arvo Pärt" "album:Alina"
+                       "playlist index:1" "id:501" "title:Für Alina"
+                       "artist:Arvo Pärt" "album:Alina")))
+          (lyrion-test--answer words)))
+    (lyrion-test--with-player
+      (should (lyrion-test--wait (lambda () (lyrion-test--shows "Für Alina"))))
+      (let ((texts nil))
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (_prompt table &rest _)
+                     (setq texts (all-completions "" table))
+                     (cadr texts))))
+          (lyrion-queue))
+        (should (equal (mapcar #'substring-no-properties texts)
+                       '("Für Alina  Arvo Pärt · Alina"
+                         "Für Alina  Arvo Pärt · Alina (2)"))))
+      (should (lyrion-test--wait
+               (lambda ()
+                 (seq-find (lambda (words) (equal (cadr words) "playlist"))
+                           (lyrion-test--commands-after-subscribing)))))
+      (should (member '("02:00:00:00:00:01" "playlist" "index" "1")
+                      (lyrion-test--commands-after-subscribing))))))
+
+;; Vertico's mode, bound in the tests below without loading Vertico.
+(defvar vertico-mode)
+
+(ert-deftest lyrion-test/vertico-starts-on-the-track-playing ()
+  "With Vertico, the selection moves to the track playing once it has drawn
+the candidates, and only then."
+  (let ((moves nil)
+        (vertico-mode t))
+    (cl-letf (((symbol-function 'vertico--goto)
+               (lambda (index) (push (list 'goto index) moves)))
+              ((symbol-function 'vertico--exhibit)
+               (lambda () (push 'exhibit moves))))
+      (with-temp-buffer
+        (lyrion--select-on-open 13)
+        (should-not moves)
+        (run-hooks 'post-command-hook)
+        (should (equal (reverse moves) '((goto 13) exhibit)))
+        ;; Later commands leave the selection alone.
+        (run-hooks 'post-command-hook)
+        (should (= 2 (length moves)))))))
+
+(ert-deftest lyrion-test/other-interfaces-start-at-the-top ()
+  (let ((vertico-mode nil))
+    (with-temp-buffer
+      (lyrion--select-on-open 13)
+      (should-not (local-variable-p 'post-command-hook)))))
+
+(ert-deftest lyrion-test/choosing-the-track-playing-starts-it-again ()
+  "Choosing the track playing from the queue plays it from the start."
+  (lyrion-test--with-server #'lyrion-test--answer
+    (lyrion-test--with-player
+      (should (lyrion-test--wait (lambda () (lyrion-test--shows "Für Alina"))))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt table &rest _)
+                   ;; The fake queue plays its second track.
+                   (cadr (all-completions "" table)))))
+        (lyrion-queue))
+      (let ((sent (lambda ()
+                    (seq-remove (lambda (words) (equal (cadr words) "status"))
+                                (lyrion-test--commands-after-subscribing)))))
+        (should (lyrion-test--wait sent))
+        (should (equal (funcall sent)
+                       '(("02:00:00:00:00:01" "playlist" "index" "1"))))))))
 
 (ert-deftest lyrion-test/an-empty-queue-is-said-so ()
   (lyrion-test--with-server
@@ -2126,9 +2294,10 @@ Radio Paradise."
          (transient-current-command nil))
      ,@body))
 
-(defun lyrion-test--qobuz-sends (categories choose &optional then)
+(defun lyrion-test--qobuz-sends (categories choose &optional then key)
   "Search Qobuz for \"mahler 9\" in CATEGORIES, choosing the result CHOOSE
-starts with, then THEN among an artist's releases.
+starts with, then THEN among an artist's releases. KEY, `shuffle' or
+`open', accepts the first choice as S-RET or M-RET would.
 Return the commands sent for the player and the texts offered first."
   (lyrion-test--with-server #'lyrion-test--answer-qobuz
     (lyrion-test--with-player
@@ -2141,6 +2310,10 @@ Return the commands sent for the player and the texts offered first."
                      (lambda (_prompt table &rest _)
                        (let ((texts (all-completions "" table)))
                          (unless offered (setq offered texts))
+                         (when (eq texts offered)
+                           (pcase key
+                             ('shuffle (setq lyrion--shuffle-chosen t))
+                             ('open (setq lyrion--open-chosen t))))
                          (seq-find (lambda (text)
                                      (string-prefix-p (if (eq texts offered)
                                                           choose
@@ -2206,6 +2379,20 @@ Return the commands sent for the player and the texts offered first."
       (should (lyrion--qobuz-p))
       (should-not (lyrion--radio-paradise-p))
       (should (assoc "radioparadise" lyrion--plugins-found)))))
+
+(ert-deftest lyrion-test/plugins-are-asked-before-the-library-is-listed ()
+  "The server answers one request at a time, so the plugins go first: behind
+the library's listings their answers would come too late for the menu."
+  (let ((lyrion--plugins-found nil))
+    (lyrion-test--with-fresh-library
+      (lyrion-test--with-server #'lyrion-test--answer-qobuz
+        (cl-letf (((symbol-function 'transient-setup) #'ignore))
+          (lyrion-search))
+        (should (lyrion-test--wait
+                 (lambda () (= 6 (length (lyrion-test--queries))))))
+        (let ((firsts (mapcar #'car lyrion-test--received)))
+          (should (equal (seq-take firsts 2) '("can" "can")))
+          (should-not (member "can" (nthcdr 2 firsts))))))))
 
 (ert-deftest lyrion-test/plugins-unanswered-are-asked-again ()
   (let ((lyrion--plugins-found nil)
@@ -2332,12 +2519,34 @@ Return the commands sent for the player and the texts offered first."
                     "item_id:0.0_mahler%209.2.0")
                   (car (lyrion-test--qobuz-sends '("tracks") "I. Andante")))))
 
-(ert-deftest lyrion-test/a-chosen-qobuz-artist-offers-their-releases ()
+(ert-deftest lyrion-test/a-chosen-qobuz-artist-plays-their-songs ()
+  "RET on an artist plays everything by them, as in the library."
+  (let ((sent (car (lyrion-test--qobuz-sends '("artists") "Gustav Mahler"))))
+    (should (member '("02:00:00:00:00:01" "playlist" "shuffle" "0") sent))
+    (should (member '("02:00:00:00:00:01" "qobuz" "playlist" "play"
+                      "item_id:0.0_mahler%209.1.0.1")
+                    sent))
+    ;; Their releases are not asked for.
+    (should-not (member '("02:00:00:00:00:01" "qobuz" "items" "0" "100"
+                          "item_id:0.0_mahler%209.1.0.0")
+                        sent))))
+
+(ert-deftest lyrion-test/a-qobuz-artist-shuffled-plays-their-songs ()
   (let ((sent (car (lyrion-test--qobuz-sends '("artists") "Gustav Mahler"
-                                             "Mahler Plays Mahler"))))
+                                             nil 'shuffle))))
+    (should (member '("02:00:00:00:00:01" "playlist" "shuffle" "1") sent))
+    (should (member '("02:00:00:00:00:01" "qobuz" "playlist" "play"
+                      "item_id:0.0_mahler%209.1.0.1")
+                    sent))))
+
+(ert-deftest lyrion-test/an-opened-qobuz-artist-offers-their-releases ()
+  "M-RET on an artist opens their releases, as in the library."
+  (let ((sent (car (lyrion-test--qobuz-sends '("artists") "Gustav Mahler"
+                                             "Mahler Plays Mahler" 'open))))
     (should (member '("02:00:00:00:00:01" "qobuz" "items" "0" "100"
                       "item_id:0.0_mahler%209.1.0.0")
                     sent))
+    (should (member '("02:00:00:00:00:01" "playlist" "shuffle" "0") sent))
     (should (member '("02:00:00:00:00:01" "qobuz" "playlist" "play"
                       "item_id:0.0_mahler%209.1.0.0.1")
                     sent))))

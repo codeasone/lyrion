@@ -20,9 +20,11 @@
 ;; Logitech Media Server). It shows what a player is playing: the cover,
 ;; the track and how far through it is, the track up next, and the track's
 ;; lyrics from LRCLIB beside it. It searches the library for tracks,
-;; releases, album artists, genres, works and playlists, and plays the
-;; choice in order or shuffled. When the server has the plugins, it also
-;; searches and streams Qobuz, and plays Radio Paradise's channels.
+;; releases, album artists, genres, works and playlists. RET plays the
+;; choice in order, S-RET shuffled, and M-RET opens an artist into their
+;; releases, to pick one. When the server has the plugins, it also searches
+;; and streams Qobuz, with the same keys, and plays Radio Paradise's
+;; channels.
 ;;
 ;; Single keys play and pause, move between and within tracks, change the
 ;; volume, shuffle and repeat, turn smart crossfading on or off, set a sleep
@@ -89,9 +91,9 @@ such as its volume and ReplayGain, from one session to the next."
   :type 'string)
 
 (defcustom lyrion-squeezelite-arguments nil
-  "Further arguments for squeezelite, such as (\"-o\" \"pulse\").
-Prefer a shared output: a `hw:' device is held exclusively, so nothing else
-on this computer can play."
+  "Further arguments for squeezelite, such as (\"-o\" \"pipewire\").
+squeezelite -l lists the output devices. Prefer a shared one: a `hw:'
+device is held exclusively, so nothing else on this computer can play."
   :type '(repeat string))
 
 (defcustom lyrion-squeezelite-idle-close 5
@@ -1487,9 +1489,25 @@ They are built once a session, in alphabetical order regardless of case."
   (setq lyrion--shuffle-chosen t)
   (call-interactively (key-binding (kbd "RET"))))
 
+(defvar lyrion--open-chosen nil
+  "Non-nil when the search result was accepted to be opened, not played.")
+
+(defun lyrion-search-open-exit ()
+  "Accept the search result as RET would, but open it rather than play it.
+An artist opens into their releases, to choose one of them; anything else
+plays as it would with RET."
+  (interactive)
+  (setq lyrion--open-chosen t)
+  (call-interactively (key-binding (kbd "RET"))))
+
 (defvar-keymap lyrion-search-minibuffer-map
-  :doc "Keys added to the minibuffer while searching the library."
-  "S-<return>" #'lyrion-search-shuffle-exit)
+  :doc "Keys added to the minibuffer while searching.
+RET plays the result in order, S-RET plays it shuffled, and M-RET opens
+an artist into their releases."
+  "S-<return>" #'lyrion-search-shuffle-exit
+  "M-<return>" #'lyrion-search-open-exit
+  ;; What a terminal sends for M-RET.
+  "M-RET" #'lyrion-search-open-exit)
 
 (defun lyrion--ui-sort (candidates)
   "Sort CANDIDATES by what was chosen recently and often, then alphabetically.
@@ -1508,7 +1526,10 @@ Results show their kind's icon, and are grouped by kind when there are
 several. SETS, results as from `lyrion--candidates-of', take the place of
 the library's, and keep their order, such as a search's relevance.
 \\<lyrion-search-minibuffer-map>
-\\[lyrion-search-shuffle-exit] accepts a result to be played shuffled."
+\\[lyrion-search-shuffle-exit] accepts a result to be played shuffled, and
+\\[lyrion-search-open-exit] one to be opened, as an artist opens into their
+releases. The prompt says so, naming the latter only when there are
+artists among KINDS."
   (let* ((ordered sets)
          (sets (or sets
                    (mapcar (lambda (entry)
@@ -1558,8 +1579,12 @@ the library's, and keep their order, such as a search's relevance.
                                  (make-composed-keymap
                                   lyrion-search-minibuffer-map
                                   (current-local-map)))))
-                   (completing-read (format "%s (S-RET to shuffle): " prompt)
-                                    table nil t)))
+                   (completing-read
+                    (format (if (seq-intersection kinds '(artist qobuz-artist))
+                                "%s (S-RET shuffles, M-RET opens an artist): "
+                              "%s (S-RET shuffles): ")
+                            prompt)
+                    table nil t)))
         (user-error "Nothing chosen"))))
 
 (defun lyrion--play-item (kind item &optional shuffle)
@@ -1572,6 +1597,11 @@ shuffled choice would leave every later one shuffled too."
      ((or 'qobuz-release 'qobuz-track 'qobuz-playlist)
       (list "qobuz" "playlist" "play"
             (concat "item_id:" (lyrion--get item "id"))))
+     ('qobuz-artist
+      ;; The second entry of an artist's menu lists their songs: those of
+      ;; Qobuz's first 200 tracks matching their name that they perform.
+      (list "qobuz" "playlist" "play"
+            (concat "item_id:" (lyrion--get item "id") ".1")))
      ('work
       ;; The work as recorded on one release, not every recording.
       (list "playlistcontrol" "cmd:load"
@@ -1584,12 +1614,38 @@ shuffled choice would leave every later one shuffled too."
   (message "%s %s" (if shuffle "Shuffling" "Playing")
            (lyrion--item-name kind item)))
 
+(defun lyrion--artist-releases (artist)
+  "Return the library's releases by ARTIST, an album artist, oldest first."
+  (lyrion--group (lyrion--query-wait
+                  (list "albums" "0" "100000"
+                        (concat "artist_id:" (lyrion--get artist "id"))
+                        "sort:yearalbum" "tags:lay"))
+                 "id"))
+
+(defun lyrion--read-release-by (name kind releases)
+  "Read one of RELEASES, of KIND, by the artist NAME, as (KIND . ITEM).
+They keep their order. The keys start afresh: RET, S-RET and M-RET then
+choose how the release plays."
+  (unless releases
+    (user-error "No releases by %s" name))
+  (setq lyrion--shuffle-chosen nil
+        lyrion--open-chosen nil)
+  (lyrion--read-item (list kind) (format "Release by %s" name)
+                     (list (lyrion--candidates-of kind releases))))
+
 (defun lyrion--search (kinds prompt &optional sets)
   "Read an item of KINDS, asking for PROMPT, and play it.
-It plays in order, or shuffled when accepted with S-RET. SETS are as for
-`lyrion--read-item'."
-  (let ((lyrion--shuffle-chosen nil))
+RET plays it in order and S-RET shuffled. M-RET opens an album artist
+into their releases, to choose one; anything else it plays as RET does.
+SETS are as for `lyrion--read-item'."
+  (let ((lyrion--shuffle-chosen nil)
+        (lyrion--open-chosen nil))
     (pcase-let ((`(,kind . ,item) (lyrion--read-item kinds prompt sets)))
+      (when (and lyrion--open-chosen (eq kind 'artist))
+        (pcase-setq `(,kind . ,item)
+                    (lyrion--read-release-by (lyrion--item-name kind item)
+                                             'release
+                                             (lyrion--artist-releases item))))
       (lyrion--play-item kind item lyrion--shuffle-chosen))))
 
 ;;; Plugins
@@ -1850,7 +1906,7 @@ The player's keys, but for \\`q', which hides the lyrics alone."
 (define-derived-mode lyrion-mode special-mode "Lyrion"
   "Show what a Lyrion Music Server player is playing.
 \\<lyrion-mode-map>\\[lyrion-play-pause] plays or pauses.
-\\[lyrion-shuffle] shuffles the queue afresh and plays from its first new track.
+\\[lyrion-shuffle] shuffles the queue afresh and plays it from the top.
 \\[lyrion-shuffle-toggle] turns shuffle on or off, the music carrying on.
 \\[lyrion-play-in-order] plays the queue in order from its first track.
 \\[lyrion-repeat] changes the repeat mode.
@@ -2059,13 +2115,15 @@ The server sends the new status, which the player then shows."
      (if (equal (lyrion--get status "mode") "stop") '("play") '("pause")))))
 
 (defun lyrion-shuffle ()
-  "Shuffle the player's queue afresh and play the first track it chose.
-The server puts the track playing first in the new order, so play goes on
-from the second track, the first the shuffle picked. Paused or stopped,
-the player starts playing."
+  "Shuffle the player's queue afresh and play it from the top.
+The server keeps the track playing first in a new order, so play moves on
+to the second, the first the shuffle picked, and the queue is shuffled
+again around that one: it then plays first, with the track left behind
+somewhere among the rest. Paused or stopped, the player starts playing."
   (interactive)
   (lyrion--player-command '("playlist" "shuffle" "1"))
-  (lyrion--player-command '("playlist" "index" "1")))
+  (lyrion--player-command '("playlist" "index" "1"))
+  (lyrion--player-command '("playlist" "shuffle" "1")))
 
 (defun lyrion-play-in-order ()
   "Turn shuffle off and play the player's queue from its first track."
@@ -2230,6 +2288,11 @@ Its composer, release and album artist match too."
   (interactive)
   (lyrion--search '(work) "Work"))
 
+(defun lyrion-search-playlists ()
+  "Choose a playlist saved in the library and play it."
+  (interactive)
+  (lyrion--search '(playlist) "Playlist"))
+
 (defun lyrion-search-all ()
   "Choose an item of any category chosen in the search menu, and play it.
 The categories are album artists, genres, playlists, releases, works and
@@ -2241,7 +2304,10 @@ tracks, all of them unless some are switched off."
   "Search Qobuz and play what is chosen.
 It searches the categories chosen in the search menu that Qobuz has:
 artists, playlists, releases and tracks. Each comes in Qobuz's order, most
-relevant first. Choosing an artist then offers their releases."
+relevant first. The keys are as for the library: an artist plays their
+songs, those Qobuz finds for their name, up to 200, and
+\\<lyrion-search-minibuffer-map>\\[lyrion-search-open-exit]
+opens the artist into their releases instead."
   (interactive)
   (let ((kinds (lyrion--chosen-kinds t))
         (term (string-trim (read-string "Search Qobuz: "))))
@@ -2249,7 +2315,8 @@ relevant first. Choosing an artist then offers their releases."
       (user-error "Nothing to search for"))
     (message "Searching Qobuz for %s..." term)
     (let ((results (seq-filter #'cdr (lyrion--qobuz-search term kinds)))
-          (lyrion--shuffle-chosen nil))
+          (lyrion--shuffle-chosen nil)
+          (lyrion--open-chosen nil))
       (message nil)
       (unless results
         (user-error "Nothing on Qobuz matches %s" term))
@@ -2259,18 +2326,11 @@ relevant first. Choosing an artist then offers their releases."
                     (mapcar (lambda (result)
                               (lyrion--candidates-of (car result) (cdr result)))
                             results))))
-        (when (eq kind 'qobuz-artist)
-          (let ((releases (lyrion--qobuz-artist-releases item)))
-            (unless releases
-              (user-error "Qobuz has no releases by %s"
-                          (lyrion--item-name kind item)))
-            (setq lyrion--shuffle-chosen nil)
-            (pcase-setq `(,kind . ,item)
-                        (lyrion--read-item
-                         '(qobuz-release)
-                         (format "Release by %s" (lyrion--item-name kind item))
-                         (list (lyrion--candidates-of 'qobuz-release
-                                                      releases))))))
+        (when (and lyrion--open-chosen (eq kind 'qobuz-artist))
+          (pcase-setq `(,kind . ,item)
+                      (lyrion--read-release-by
+                       (lyrion--item-name kind item) 'qobuz-release
+                       (lyrion--qobuz-artist-releases item))))
         (lyrion--play-item kind item lyrion--shuffle-chosen)))))
 
 (transient-define-prefix lyrion-search-menu ()
@@ -2297,6 +2357,7 @@ changed while choosing."
     ("a" "Album artists" lyrion-search-album-artists)
     ("g" "Genres" lyrion-search-genres)
     ("w" "Works" lyrion-search-works)
+    ("l" "Playlists" lyrion-search-playlists)
     ("/" "Everything" lyrion-search-all)
     ("q" "Qobuz" lyrion-search-qobuz :if lyrion--qobuz-p)]
    ["Radio"
@@ -2317,8 +2378,10 @@ changed while choosing."
 A menu asks what to search for. The library is listed in the background as
 it opens, once a session, so it is usually ready by the next key."
   (interactive)
-  (lyrion--library-prefetch)
+  ;; The plugins first: the server answers one request at a time, and
+  ;; behind the library's listings their answer would come too late.
   (lyrion--check-plugins)
+  (lyrion--library-prefetch)
   (transient-setup 'lyrion-search-menu))
 
 (defun lyrion--queue (id)
@@ -2331,11 +2394,33 @@ with its position as `playlist index'. Positions count from 0."
                                        "playlist_cur_index"))
           (lyrion--group reply "playlist index"))))
 
+(declare-function vertico--goto "vertico")
+(declare-function vertico--exhibit "vertico")
+
+(defun lyrion--select-on-open (index)
+  "Have Vertico, when it is in use, start with candidate INDEX selected.
+Vertico draws the candidates once the minibuffer opens, and the selection
+moves just after. Vertico has no public way to do this, so its internal
+`vertico--goto' is used, when there; other completion interfaces start at
+the first candidate."
+  (when (and (bound-and-true-p vertico-mode)
+             (fboundp 'vertico--goto)
+             (fboundp 'vertico--exhibit))
+    (letrec ((select (lambda ()
+                       (remove-hook 'post-command-hook select t)
+                       (vertico--goto index)
+                       (vertico--exhibit))))
+      ;; After Vertico's own drawing, which runs at the default depth.
+      (add-hook 'post-command-hook select 90 t))))
+
 (defun lyrion-queue ()
   "Show the player's queue in play order, and play the track chosen.
-The queue is asked for afresh each time. Each track shows its position,
-title, artist and album, all of which match; the one playing is marked.
-Choosing a track plays it where it is: the queue stays as it was."
+The track playing is marked, and with Vertico the selection starts on it,
+so the tracks before and after it are a move away.
+The queue is asked for afresh each time. Each track shows its title,
+artist and album, all of which match; a track queued twice has a number to
+tell the two apart. Choosing a track plays it where it is, the queue
+staying as it was; choosing the one playing starts it again."
   (interactive)
   (let* ((player (buffer-local-value 'lyrion--player (lyrion--player-buffer)))
          (id (or (lyrion--get player "playerid")
@@ -2347,15 +2432,30 @@ Choosing a track plays it where it is: the queue stays as it was."
           (mapcar (lambda (track)
                     (let* ((position (lyrion--number
                                       (lyrion--get track "playlist index")))
-                           (text (lyrion--with-detail
-                                  (format "%d. %s" (1+ position)
-                                          (or (lyrion--get track "title") ""))
+                           (base (lyrion--with-detail
+                                  (or (lyrion--get track "title") "")
                                   (list (lyrion--get track "artist")
-                                        (lyrion--get track "album")))))
+                                        (lyrion--get track "album"))))
+                           (text base)
+                           (copy 1))
+                      ;; Positions are left out, so as not to be taken for
+                      ;; the track's number on its release; a repeat gets a
+                      ;; number of its own instead.
+                      (while (gethash (substring-no-properties text) positions)
+                        (setq copy (1+ copy)
+                              text (format "%s (%d)" base copy)))
                       (puthash (substring-no-properties text) position
                                positions)
                       text))
-                  (cdr queue))))
+                  (cdr queue)))
+         ;; Where the track playing is among them, to select it.
+         (start (and current
+                     (seq-position texts current
+                                   (lambda (text position)
+                                     (eql (gethash (substring-no-properties
+                                                    text)
+                                                   positions)
+                                          position))))))
     (unless texts
       (user-error "The queue is empty"))
     (let* ((affix (lambda (candidates)
@@ -2377,15 +2477,19 @@ Choosing a track plays it where it is: the queue stays as it was."
                                    (display-sort-function . identity)
                                    (cycle-sort-function . identity))
                       (complete-with-action action texts string predicate))))
-           (choice (completing-read
-                    (if current
-                        (format "Queue (track %d of %d): "
-                                (1+ current) (length texts))
-                      "Queue: ")
-                    table nil t))
+           (choice (minibuffer-with-setup-hook
+                       (:append (lambda ()
+                                  (when start (lyrion--select-on-open start))))
+                     (completing-read
+                      (if current
+                          (format "Queue (playing %d of %d): "
+                                  (1+ current) (length texts))
+                        "Queue: ")
+                      table nil t)))
            (position (gethash (substring-no-properties choice) positions)))
       (unless position
         (user-error "Nothing chosen"))
+      ;; The track playing too, which then starts again.
       (lyrion--player-command
        (list "playlist" "index" (number-to-string position))))))
 
@@ -2453,8 +2557,9 @@ through the queue and the track keeps the menu open; other keys close it."
     ("X" lyrion-crossfade :description lyrion--crossfade-description)
     ("I" "Inspect the queue" lyrion-queue)]
    ["Library"
-    ("/" "Search..." lyrion-search)]
-   ["Player"
+    ("/" "Search..." lyrion-search)]]
+  ;; A second row, so the menu fits a frame of about 80 columns.
+  [["Player"
     ("p" "Choose the player" lyrion-select-player)
     ("w" "Copy artist, release and title" lyrion-copy-track)
     ("Z" lyrion-sleep :description lyrion--sleep-description)
