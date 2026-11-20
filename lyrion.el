@@ -1,4 +1,4 @@
-;;; lyrion.el --- A minimal front end for Lyrion Music Server -*- lexical-binding: t -*-
+;;; lyrion.el --- A lean front end for Lyrion Music Server -*- lexical-binding: t -*-
 
 ;; SPDX-License-Identifier: CC0-1.0
 ;;
@@ -16,7 +16,7 @@
 
 ;;; Commentary:
 
-;; `lyrion' is a minimal front end for a Lyrion Music Server (formerly
+;; `lyrion' is a lean front end for a Lyrion Music Server (formerly
 ;; Logitech Media Server). It shows what a player is playing: the cover,
 ;; the track and how far through it is, the track up next, and the track's
 ;; lyrics from LRCLIB beside it. It searches the library for tracks,
@@ -54,7 +54,7 @@
 (require 'url-util)
 
 (defgroup lyrion nil
-  "A minimal front end for Lyrion Music Server."
+  "A lean front end for Lyrion Music Server."
   :group 'multimedia
   :prefix "lyrion-")
 

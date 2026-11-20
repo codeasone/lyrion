@@ -2,7 +2,7 @@
 
 [[https://github.com/codeasone/lyrion/actions/workflows/test.yml][https://github.com/codeasone/lyrion/actions/workflows/test.yml/badge.svg]] [[https://www.gnu.org/software/emacs/][https://img.shields.io/badge/Emacs-30.1%2B-7F5AB6.svg]] [[file:LICENSE][https://img.shields.io/badge/licence-CC0--1.0-lightgrey.svg]]
 
-A minimal Emacs front end for a [[https://lyrion.org][Lyrion Music Server]] (=LMS=).
+A lean Emacs front end for a [[https://lyrion.org][Lyrion Music Server]] (=LMS=).
 
 See what's playing, search your library, and control any player on the server.
 
