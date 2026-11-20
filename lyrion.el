@@ -1038,12 +1038,19 @@ LINES is a vector of timed lines, in order."
          (end (save-excursion (goto-char start) (line-end-position))))
     (move-overlay lyrion--lyrics-overlay start end)
     (dolist (window (get-buffer-window-list (current-buffer) nil t))
-      ;; Keep the sung line a third of the way down the window.
-      (set-window-start
-       window (save-excursion
-                (goto-char start)
-                (forward-line (- (/ (window-body-height window) 3)))
-                (point))))))
+      ;; Keep the sung line a third of the way down the window, but scroll
+      ;; no further than shows the last line at the bottom: lyrics that fit
+      ;; keep their title in view. Wrapped lines count as the lines shown.
+      (let ((height (window-body-height window)))
+        (set-window-start
+         window (save-excursion
+                  (min (progn (goto-char start)
+                              (vertical-motion (- (/ height 3)) window)
+                              (point))
+                       ;; From the last line, not the empty one after it.
+                       (progn (goto-char (max (point-min) (1- (point-max))))
+                              (vertical-motion (- 1 height) window)
+                              (point)))))))))
 
 (defun lyrion--lyrics-tick (buffer)
   "Light the line of BUFFER's lyrics being sung, while they are shown."

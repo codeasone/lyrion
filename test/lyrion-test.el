@@ -2539,6 +2539,28 @@ then shows it and sets its volume."
                    "Zwei"))
     (should (eq (overlay-get lyrion--lyrics-overlay 'face) 'lyrion-lyrics-current))))
 
+(ert-deftest lyrion-test/lyrics-scroll-only-as-far-as-needed ()
+  "Lyrics that fit the window keep their title in view; longer ones keep
+the line being sung a third of the way down."
+  (lyrion-test--in-lyrics
+    (let ((window (selected-window))
+          (lines (lambda (count)
+                   (mapcar (lambda (n) (cons n (format "Line %d" n)))
+                           (number-sequence 1 count)))))
+      (set-window-buffer window (current-buffer))
+      (let ((height (window-body-height window)))
+        (lyrion--lyrics-render lyrion-test--track
+                               (funcall lines (- height 4)))
+        (lyrion--lyrics-light (- height 5))
+        (should (= (window-start window) (point-min)))
+        (lyrion--lyrics-render lyrion-test--track
+                               (funcall lines (* 4 height)))
+        (lyrion--lyrics-light (* 2 height))
+        (let ((sung (overlay-start lyrion--lyrics-overlay)))
+          (should (> (window-start window) (point-min)))
+          (should (= (count-screen-lines (window-start window) sung nil window)
+                     (/ height 3))))))))
+
 (ert-deftest lyrion-test/lyrics-tick-follows-the-player ()
   (let ((player (get-buffer-create lyrion-buffer-name))
         (window-buffer (window-buffer (selected-window))))
