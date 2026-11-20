@@ -242,7 +242,11 @@ Among an artist's releases, =RET= plays the one you pick and =S-RET= shuffles it
 
 When the server has the [[https://www.qobuz.com][Qobuz]] plugin, =q= in the search menu searches Qobuz and streams what you choose.
 
-It searches whichever of artists, playlists, releases and tracks are switched on; works and genres exist only in the library. Results are grouped as in an /Everything/ search, each group in Qobuz's order, most relevant first, and ~lyrion-qobuz-results~ sets how many come back in each. For fewer results in one search, end it with a colon and a number: =plaid:5= shows the top five of each kind. What each result plays is under [[#choosing][Playing what you choose]].
+It searches whichever of artists, playlists, releases and tracks are switched on; works and genres exist only in the library. Results are grouped as in an /Everything/ search, each group in Qobuz's order, most relevant first, and ~lyrion-qobuz-results~ sets how many come back in each. For fewer results in one search, end it with a colon and a number: =plaid:5= shows the top five of each kind, as here. What each result plays is under [[#choosing][Playing what you choose]].
+
+#+attr_html: :width 900px
+#+attr_org: :width 900
+[[file:images/qobuz-search.png]]
 
 =lyrion= asks the server whether it has the plugin the first time the search menu opens in a session, waiting up to two seconds. If the server does not answer in time, it asks again at the next search; if you install the plugin while =lyrion= is running, =g= in the now-playing buffer asks again.
 
@@ -275,6 +279,10 @@ These settings suit =lyrion=. Leave the others at their defaults.
 * Radio Paradise
 
 When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =P= in the search menu lists its channels, such as Main Mix and Mellow Mix. The channel you choose replaces the queue and plays in FLAC, the best of its streams, which also allows skipping songs.
+
+#+attr_html: :width 900px
+#+attr_org: :width 900
+[[file:images/radio-paradise-channels.png]]
 
 =LMS= relays the stream one song at a time, each with its own title and cover, so the card follows the songs as the channel plays.
 
