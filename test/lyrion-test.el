@@ -1789,7 +1789,7 @@ track plays it where it is, without loading the queue again."
                            metadata (cdr (funcall table "" nil 'metadata)))
                      (car (last texts)))))
           (lyrion-queue))
-        (should (equal prompt "Queue (playing 2 of 3): "))
+        (should (equal prompt "Queue (playing 2 of 3, S-RET shuffles): "))
         (should (equal (mapcar #'substring-no-properties texts)
                        '("Für Alina  Arvo Pärt · Alina"
                          "Spiegel im Spiegel  Arvo Pärt · Alina"
@@ -1838,7 +1838,7 @@ track plays it where it is, without loading the queue again."
                        (car (last texts))))))
           (lyrion-queue))
         (should (equal marks '("  " "  " "▶ ")))
-        (should (string-prefix-p "Queue (playing 3 of 3): " prompt))))))
+        (should (string-prefix-p "Queue (playing 3 of 3, S-RET shuffles): " prompt))))))
 
 (ert-deftest lyrion-test/with-vertico-the-queue-stays-open-to-try-another ()
   "RET plays the track selected and leaves the queue open; C-g closes it."
@@ -1870,11 +1870,48 @@ track plays it where it is, without loading the queue again."
                         (quit 'closed))
                       'closed)))
         (should (equal marks '("  " "  " "▶ ")))
-        (should (string-prefix-p "Queue (playing 3 of 3): " prompt))
+        (should (string-prefix-p "Queue (playing 3 of 3, S-RET shuffles): " prompt))
         (should (lyrion-test--wait
                  (lambda ()
                    (member '("02:00:00:00:00:01" "playlist" "index" "2")
                            (lyrion-test--commands-after-subscribing)))))))))
+
+(ert-deftest lyrion-test/s-ret-in-the-queue-shuffles-and-shows-it-again ()
+  "S-RET shuffles the queue as on the player, and the queue opens again,
+asked for afresh, on the track playing first."
+  (lyrion-test--with-server #'lyrion-test--answer
+    (lyrion-test--with-player
+      (should (lyrion-test--wait (lambda () (lyrion-test--shows "Für Alina"))))
+      (let ((opened 0) (fetched nil))
+        (cl-letf (((symbol-function 'lyrion--select-on-open) #'ignore)
+                  ((symbol-function 'lyrion--scroll-start) #'ignore)
+                  ((symbol-function 'completing-read)
+                   (lambda (given &rest _)
+                     (setq opened (1+ opened))
+                     (push (cl-count '("status" "0" "100000" "tags:al")
+                                     lyrion-test--received
+                                     :key #'cdr :test #'equal)
+                           fetched)
+                     (when (= opened 1)
+                       (with-temp-buffer
+                         (insert given)
+                         (let ((vertico--input t)
+                               (vertico--index 0)
+                               (vertico--candidates nil))
+                           (run-hooks 'minibuffer-setup-hook)
+                           (unwind-protect
+                               (call-interactively
+                                (key-binding (kbd "S-<return>")))
+                             (run-hooks 'minibuffer-exit-hook)))))
+                     (signal 'quit nil))))
+          (condition-case nil (lyrion-queue) (quit nil)))
+        (should (= opened 2))
+        (should (equal (reverse fetched) '(1 2)))
+        (should (equal (seq-filter (lambda (words) (equal (cadr words) "playlist"))
+                                   (lyrion-test--commands-after-subscribing))
+                       '(("02:00:00:00:00:01" "playlist" "shuffle" "1")
+                         ("02:00:00:00:00:01" "playlist" "index" "1")
+                         ("02:00:00:00:00:01" "playlist" "shuffle" "1"))))))))
 
 (ert-deftest lyrion-test/a-track-chosen-keeps-the-mark-until-it-plays ()
   "Just after a choice, a status naming the track before does not move the

@@ -2835,8 +2835,8 @@ the mark stays on the track chosen.")
 (defun lyrion--queue-prompt (current total)
   "Return the queue's prompt, playing CURRENT, a position, of TOTAL tracks."
   (if current
-      (format "Queue (playing %d of %d): " (1+ current) total)
-    "Queue: "))
+      (format "Queue (playing %d of %d, S-RET shuffles): " (1+ current) total)
+    "Queue (S-RET shuffles): "))
 
 (defun lyrion--set-prompt (prompt)
   "Make PROMPT the minibuffer's prompt, keeping the old one's properties.
@@ -2898,8 +2898,21 @@ another; \\`C-g' closes it.
 The queue is asked for afresh each time. Each track shows its title,
 artist and album, all of which match; a track queued twice has a number to
 tell the two apart. Choosing a track plays it where it is, the queue
-staying as it was; choosing the one playing starts it again."
+staying as it was; choosing the one playing starts it again.
+\\`S-RET' shuffles the queue afresh, as `lyrion-shuffle' does, and shows
+it again in its new order, on the track that then plays first."
   (interactive)
+  (while (lyrion--queue-once)))
+
+(defun lyrion--queue-once ()
+  "Show the queue and play the track chosen, as `lyrion-queue' does.
+Return non-nil when \\`S-RET' shuffled it, to show it again."
+  (catch 'lyrion--queue-shuffled
+    (lyrion--queue-show)
+    nil))
+
+(defun lyrion--queue-show ()
+  "Show the queue, for `lyrion--queue-once'."
   (let* ((buffer (lyrion--player-buffer))
          (player (buffer-local-value 'lyrion--player buffer))
          (id (or (lyrion--get player "playerid")
@@ -2996,17 +3009,24 @@ staying as it was; choosing the one playing starts it again."
                                                vertico--candidates))))
                        (funcall update (funcall play choice) t)
                      (lyrion--user-error "Nothing chosen"))))
+           ;; The queue shows again, in its new order.
+           (shuffle (lambda ()
+                      (interactive)
+                      (lyrion-shuffle)
+                      (throw 'lyrion--queue-shuffled t)))
            (choice (minibuffer-with-setup-hook
                        (:append (lambda ()
                                   (when start (lyrion--select-on-open start))
                                   (lyrion--scroll-start)
                                   (lyrion--queue-follow buffer update)
-                                  (when (bound-and-true-p vertico--input)
-                                    (use-local-map
-                                     (make-composed-keymap
-                                      (define-keymap "RET" stay
-                                                     "<return>" stay)
-                                      (current-local-map))))))
+                                  (use-local-map
+                                   (make-composed-keymap
+                                    (if (bound-and-true-p vertico--input)
+                                        (define-keymap "RET" stay
+                                                       "<return>" stay
+                                                       "S-<return>" shuffle)
+                                      (define-keymap "S-<return>" shuffle))
+                                    (current-local-map)))))
                      (completing-read
                       (lyrion--queue-prompt current (length texts))
                       table nil t))))

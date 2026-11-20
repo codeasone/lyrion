@@ -340,6 +340,8 @@ When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =P
 
 =RET= plays the chosen track where it stands, without reloading or reshuffling the queue; on the track already playing, it starts it again. With =vertico=, the queue stays open, so you can hop between tracks until one suits, then close it with =C-g=. Other completion UIs close the queue as the track starts.
 
+=S-RET= shuffles the queue afresh, as =S-RET= in the player does, and shows it again in its new order, on the track that now plays first.
+
 #+attr_html: :width 900px
 #+attr_org: :width 900
 [[file:images/queue.png]]
