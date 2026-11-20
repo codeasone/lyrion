@@ -313,7 +313,7 @@ When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =P
 - Lines have no numbers, which could be confused with a track's number on its release; the prompt says where you are instead, as in /playing 12 of 40/.
 - A track queued twice has /(2)/ after its second copy.
 
-=RET= plays the chosen track where it stands, without reloading or reshuffling the queue; on the track already playing, it starts it again. =C-g= closes the queue without changing anything.
+=RET= plays the chosen track where it stands, without reloading or reshuffling the queue; on the track already playing, it starts it again. With =vertico=, the queue stays open, so you can hop between tracks until one suits, then close it with =C-g=. Other completion UIs close the queue as the track starts.
 
 #+attr_html: :width 900px
 #+attr_org: :width 900

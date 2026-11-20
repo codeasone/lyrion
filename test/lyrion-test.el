@@ -1812,6 +1812,42 @@ track plays it where it is, without loading the queue again."
         (should (equal marks '("  " "  " "▶ ")))
         (should (string-prefix-p "Queue (playing 3 of 3): " prompt))))))
 
+(ert-deftest lyrion-test/with-vertico-the-queue-stays-open-to-try-another ()
+  "RET plays the track selected and leaves the queue open; C-g closes it."
+  (lyrion-test--with-server #'lyrion-test--answer
+    (lyrion-test--with-player
+      (should (lyrion-test--wait (lambda () (lyrion-test--shows "Für Alina"))))
+      (let ((marks nil) (prompt nil))
+        (cl-letf (((symbol-function 'lyrion--select-on-open) #'ignore)
+                  ((symbol-function 'lyrion--scroll-start) #'ignore)
+                  ((symbol-function 'completing-read)
+                   (lambda (given table &rest _)
+                     (let* ((texts (all-completions "" table))
+                            (affix (alist-get 'affixation-function
+                                              (cdr (funcall table "" nil
+                                                            'metadata)))))
+                       (with-temp-buffer
+                         (insert given)
+                         (let ((vertico--input t)
+                               (vertico--index 2)
+                               (vertico--candidates texts))
+                           (run-hooks 'minibuffer-setup-hook)
+                           (call-interactively (key-binding (kbd "RET")))
+                           (setq marks (mapcar #'cadr (funcall affix texts))
+                                 prompt (buffer-string))
+                           (run-hooks 'minibuffer-exit-hook)))
+                       (signal 'quit nil)))))
+          ;; C-g quits, which is not an error.
+          (should (eq (condition-case nil (progn (lyrion-queue) 'chose)
+                        (quit 'closed))
+                      'closed)))
+        (should (equal marks '("  " "  " "▶ ")))
+        (should (string-prefix-p "Queue (playing 3 of 3): " prompt))
+        (should (lyrion-test--wait
+                 (lambda ()
+                   (member '("02:00:00:00:00:01" "playlist" "index" "2")
+                           (lyrion-test--commands-after-subscribing)))))))))
+
 (ert-deftest lyrion-test/set-prompt-keeps-the-input ()
   (with-temp-buffer
     ;; As a minibuffer's prompt is.

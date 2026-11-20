@@ -2764,6 +2764,8 @@ the first candidate."
 The track playing is marked, and with Vertico the selection starts on it,
 so the tracks before and after it are a move away. The mark and the
 prompt follow the player when it moves on to another track.
+With Vertico, the queue stays open after a track is chosen, to choose
+another; \\`C-g' closes it.
 The queue is asked for afresh each time. Each track shows its title,
 artist and album, all of which match; a track queued twice has a number to
 tell the two apart. Choosing a track plays it where it is, the queue
@@ -2835,20 +2837,40 @@ staying as it was; choosing the one playing starts it again."
                        (when (and (bound-and-true-p vertico--input)
                                   (fboundp 'vertico--exhibit))
                          (vertico--exhibit)))))
+           ;; The track playing too, which then starts again.
+           (play (lambda (choice)
+                   (let ((position (gethash (substring-no-properties choice)
+                                            positions)))
+                     (unless position
+                       (user-error "Nothing chosen"))
+                     (lyrion--player-command
+                      (list "playlist" "index" (number-to-string position)))
+                     position)))
+           ;; With Vertico, RET plays the track selected and the queue stays
+           ;; open, to try another; C-g closes it.
+           (stay (lambda ()
+                   (interactive)
+                   (if-let* ((choice (and (>= vertico--index 0)
+                                          (nth vertico--index
+                                               vertico--candidates))))
+                       (funcall update (funcall play choice))
+                     (user-error "Nothing chosen"))))
            (choice (minibuffer-with-setup-hook
                        (:append (lambda ()
                                   (when start (lyrion--select-on-open start))
                                   (lyrion--scroll-start)
-                                  (lyrion--queue-follow buffer update)))
+                                  (lyrion--queue-follow buffer update)
+                                  (when (bound-and-true-p vertico--input)
+                                    (use-local-map
+                                     (make-composed-keymap
+                                      (define-keymap "RET" stay
+                                                     "<return>" stay)
+                                      (current-local-map))))))
                      (completing-read
                       (lyrion--queue-prompt current (length texts))
-                      table nil t)))
-           (position (gethash (substring-no-properties choice) positions)))
-      (unless position
-        (user-error "Nothing chosen"))
-      ;; The track playing too, which then starts again.
-      (lyrion--player-command
-       (list "playlist" "index" (number-to-string position))))))
+                      table nil t))))
+      ;; Without Vertico, choosing closes the queue.
+      (funcall play choice))))
 
 (defun lyrion--shown (variable)
   "Return VARIABLE's value in the now-playing buffer, or nil without one."
