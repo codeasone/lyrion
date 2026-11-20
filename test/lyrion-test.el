@@ -1674,13 +1674,18 @@ and a second shuffle then puts that one first, the old one among the rest."
                    (get 'lyrion-dispatch 'transient--layout))))
     (dolist (map (list lyrion-mode-map lyrion-lyrics-mode-map))
       (should (eq (lookup-key map (kbd "?")) #'lyrion-dispatch))
-      (map-keymap-internal
-       (lambda (event command)
-         ;; `q' is left to the panes: in the menu, C-g closes it.
-         (unless (memq command '(lyrion-dispatch lyrion-quit quit-window))
-           (should (eq (cdr (assoc (key-description (vector event)) suffixes))
-                       command))))
-       map))
+      (named-let walk ((map map) (prefix []))
+        (map-keymap-internal
+         (lambda (event command)
+           (let ((key (vconcat prefix (vector event))))
+             (cond
+              ;; Meta keys, such as M-/, sit under ESC.
+              ((keymapp command) (walk command key))
+              ;; `q' is left to the panes: in the menu, C-g closes it.
+              ((memq command '(lyrion-dispatch lyrion-quit quit-window)))
+              (t (should (eq (cdr (assoc (key-description key) suffixes))
+                             command))))))
+         map)))
     (should (eq (cdr (assoc "g" suffixes)) #'revert-buffer))
     ;; The lyrics share the player's keys, but `q' hides them alone.
     (should (eq (lookup-key lyrion-lyrics-mode-map (kbd "q")) #'quit-window))))
@@ -3006,6 +3011,101 @@ results, without asking Qobuz again, then ESC to the menu, as it was."
         (should (equal reopened '(lyrion-search-menu nil nil :value ("artists"))))
         (should-not (seq-find (lambda (words) (member "play" words))
                               lyrion-test--received))))))
+
+(ert-deftest lyrion-test/m-slash-goes-back-to-the-last-choice ()
+  "After / q, M-RET on an artist and one of their releases played, M-/
+opens the releases again, on the one played, without searching Qobuz
+again. ESC goes back to the results, on the artist, then to the menu."
+  (lyrion-test--with-server #'lyrion-test--answer-qobuz
+    (lyrion-test--with-player
+      (should (lyrion-test--wait (lambda () (lyrion-test--shows "Für Alina"))))
+      (let ((lyrion--last-search nil)
+            ;; How each prompt answers, given its texts, in turn.
+            (answers
+             (list (lambda (texts)
+                     (setq lyrion--open-chosen t)
+                     (seq-find (lambda (text)
+                                 (string-prefix-p "Gustav Mahler" text))
+                               texts))
+                   #'car))
+            ;; Each prompt's first word, and the text Vertico starts on.
+            (shown nil)
+            (selected nil)
+            (reopened nil)
+            (searches (lambda ()
+                        (cl-count "search:mahler 9" lyrion-test--received
+                                  :test (lambda (word words)
+                                          (member word words))))))
+        (cl-letf (((symbol-function 'transient-args)
+                   (lambda (_) '("artists" "releases")))
+                  ((symbol-function 'transient-setup)
+                   (lambda (&rest args) (setq reopened args)))
+                  ((symbol-function 'lyrion--scroll-start) #'ignore)
+                  ((symbol-function 'message) #'ignore)
+                  ((symbol-function 'read-string)
+                   (lambda (&rest _) "mahler 9"))
+                  ((symbol-function 'lyrion--select-on-open)
+                   (lambda (index) (setq selected index)))
+                  ((symbol-function 'completing-read)
+                   (lambda (prompt table &rest _)
+                     (let ((texts (all-completions "" table)))
+                       (setq selected nil)
+                       (with-temp-buffer
+                         (run-hooks 'minibuffer-setup-hook))
+                       (push (list (car (split-string prompt " "))
+                                   (and selected
+                                        (substring-no-properties
+                                         (nth (funcall selected texts) texts))))
+                             shown)
+                       (funcall (pop answers) texts)))))
+          (let ((transient-current-command 'lyrion-search-menu))
+            (lyrion-search-qobuz))
+          (should (lyrion-test--wait
+                   (lambda () (seq-find (lambda (words) (member "play" words))
+                                        lyrion-test--received))))
+          (should (equal (reverse shown) '(("Qobuz" nil) ("Release" nil))))
+          (let ((before (funcall searches)))
+            (setq shown nil
+                  answers (list (lambda (_) (lyrion-search-escape))
+                                (lambda (_) (lyrion-search-escape))))
+            (let ((transient-current-command nil))
+              (lyrion-search-resume))
+            (should (equal (mapcar #'car (reverse shown)) '("Release" "Qobuz")))
+            (should (string-prefix-p "Mahler Plays Mahler" (cadr (nth 1 shown))))
+            (should (string-prefix-p "Gustav Mahler" (cadr (nth 0 shown))))
+            (should (= (funcall searches) before))
+            (should (equal reopened
+                           '(lyrion-search-menu nil nil
+                                                :value ("artists" "releases"))))))))))
+
+(ert-deftest lyrion-test/m-slash-goes-back-to-a-radio-paradise-channel ()
+  "M-/ after P opens the channels again, on the one played."
+  (lyrion-test--with-server #'lyrion-test--answer-qobuz
+    (lyrion-test--with-player
+      (should (lyrion-test--wait (lambda () (lyrion-test--shows "Für Alina"))))
+      (let ((lyrion--last-search nil)
+            (selected nil)
+            (offered nil))
+        (cl-letf (((symbol-function 'message) #'ignore)
+                  ((symbol-function 'lyrion--select-on-open)
+                   (lambda (index) (setq selected index)))
+                  ((symbol-function 'completing-read)
+                   (lambda (_prompt table &rest _)
+                     (setq selected nil
+                           offered (all-completions "" table))
+                     (with-temp-buffer
+                       (run-hooks 'minibuffer-setup-hook))
+                     "Velvet")))
+          (lyrion-radio-paradise)
+          (should-not selected)
+          (lyrion-search-resume)
+          (should (equal (nth (funcall selected offered) offered) "Velvet")))))))
+
+(ert-deftest lyrion-test/m-slash-needs-a-search-first ()
+  (let ((lyrion--last-search nil))
+    (should-error (lyrion-search-resume) :type 'user-error))
+  (dolist (map (list lyrion-mode-map lyrion-lyrics-mode-map))
+    (should (eq (lookup-key map (kbd "M-/")) #'lyrion-search-resume))))
 
 (ert-deftest lyrion-test/a-qobuz-release-name-is-taken-apart ()
   (let ((item (lyrion--qobuz-release

@@ -1825,15 +1825,108 @@ Return a list of its value, or nil when \\`ESC' came back."
       (let ((lyrion--back tag))
         (list (funcall function))))))
 
+(defvar lyrion--steps nil
+  "The steps of the search under way, by depth, or nil outside a search.
+A vector of (CHOICE . OPENED): the text of the result chosen, and
+whether it was accepted to be opened.")
+
+(defvar lyrion--depth 0
+  "How many steps into the search under way its prompt is, from 0.")
+
+(defvar lyrion--last-step nil
+  "The depth of the step chosen last in the search under way.")
+
+(defvar lyrion--qobuz-found nil
+  "The search's Qobuz results, as (SEARCH RESULTS), or nil.
+SEARCH is the text searched for, as typed.")
+
+(defvar lyrion--last-search nil
+  "The last search that played something, for `lyrion-search-resume'.
+A plist of the search's :command, :menu, :steps, :last and :qobuz.")
+
+(defvar lyrion--resume nil
+  "The search `lyrion-search-resume' is going back to, or nil.
+It is as `lyrion--last-search' keeps it.")
+
+(defvar lyrion--resuming nil
+  "Non-nil while the search gone back to retraces its steps.")
+
 (defun lyrion--with-back (function)
   "Call FUNCTION, a search, going back to the search menu on \\`ESC'.
 That is when the menu called it: the menu opens again with the switches
-it had. Otherwise \\`ESC' leaves the search altogether."
-  (if (not (eq transient-current-command 'lyrion-search-menu))
-      (funcall function)
-    (let ((value (transient-args 'lyrion-search-menu)))
-      (unless (lyrion--back-to-here function)
-        (transient-setup 'lyrion-search-menu nil nil :value value)))))
+it had. Otherwise \\`ESC' leaves the search altogether. The search's
+steps are kept, so that `lyrion-search-resume' can go back to them once
+it plays something."
+  (let* ((menu (cond (lyrion--resume (plist-get lyrion--resume :menu))
+                     ((eq transient-current-command 'lyrion-search-menu)
+                      (list (transient-args 'lyrion-search-menu)))))
+         (lyrion--steps (if lyrion--resume
+                            (copy-sequence (plist-get lyrion--resume :steps))
+                          (make-vector 3 nil)))
+         (lyrion--qobuz-found (plist-get lyrion--resume :qobuz))
+         (lyrion--last-step nil)
+         (lyrion--depth 0))
+    (cond
+     ((not (if menu
+               (lyrion--back-to-here function)
+             (funcall function)
+             t))
+      (transient-setup 'lyrion-search-menu nil nil :value (car menu)))
+     (lyrion--last-step
+      (setq lyrion--last-search
+            (list :command function :menu menu
+                  :steps (copy-sequence lyrion--steps)
+                  :last lyrion--last-step :qobuz lyrion--qobuz-found))))))
+
+(defun lyrion--step (read)
+  "Take a step of the search under way with READ, keeping what is chosen.
+READ returns the text of the result chosen, which is returned. A step
+taken before opens on its whole list, with Vertico selecting the choice
+made then. While a search gone back to retraces its steps, those before
+its last are taken again without asking."
+  (if (not lyrion--steps)
+      (funcall read)
+    (let* ((depth lyrion--depth)
+           (before (aref lyrion--steps depth))
+           (choice
+            (if (and lyrion--resuming before
+                     (< depth (plist-get lyrion--resume :last)))
+                (progn (when (cdr before)
+                         (setq lyrion--open-chosen t))
+                       (car before))
+              (setq lyrion--resuming nil)
+              (substring-no-properties
+               (minibuffer-with-setup-hook
+                   (lambda ()
+                     (when before
+                       (lyrion--select-on-open
+                        (lambda (candidates)
+                          (seq-position candidates (car before)
+                                        (lambda (candidate text)
+                                          (equal (substring-no-properties
+                                                  (lyrion--result candidate))
+                                                 text)))))))
+                 (funcall read))))))
+      ;; Steps past one chosen afresh no longer lead anywhere.
+      (unless (equal choice (car before))
+        (let ((deeper (1+ depth)))
+          (while (< deeper (length lyrion--steps))
+            (aset lyrion--steps deeper nil)
+            (setq deeper (1+ deeper)))))
+      (aset lyrion--steps depth (cons choice lyrion--open-chosen))
+      (setq lyrion--last-step depth)
+      choice)))
+
+(defun lyrion-search-resume ()
+  "Go back to the last search that played something, where it was left.
+Its prompt opens on its whole list, with Vertico selecting the result
+chosen, and \\`ESC' goes back from there step by step, as it did then,
+each step on its own choice."
+  (interactive)
+  (let ((lyrion--resume (or lyrion--last-search
+                            (lyrion--user-error "No search has played anything yet")))
+        (lyrion--resuming t))
+    (lyrion--with-back (plist-get lyrion--resume :command))))
 
 (defun lyrion--read-or-open (read open)
   "Read a result with READ, and return it as (KIND . ITEM).
@@ -1848,7 +1941,8 @@ opens into, such as an artist's releases, or nil to take it as it is.
       (pcase-let* ((`(,kind . ,item) (funcall read))
                    (opened (and lyrion--open-chosen (funcall open kind item))))
         (setq chosen (if opened
-                         (car (lyrion--back-to-here opened))
+                         (let ((lyrion--depth (1+ lyrion--depth)))
+                           (car (lyrion--back-to-here opened)))
                        (cons kind item)))))
     chosen))
 
@@ -1960,19 +2054,22 @@ artists among KINDS."
                                         `((group-function . ,group))))
                     (complete-with-action action texts string predicate)))))
     (or (funcall lookup
-                 (minibuffer-with-setup-hook
-                     (:append (lambda ()
-                                (use-local-map
-                                 (make-composed-keymap
-                                  lyrion-search-minibuffer-map
-                                  (current-local-map)))
-                                (lyrion--scroll-start)))
-                   (completing-read
-                    (format (if (seq-intersection kinds '(artist qobuz-artist))
-                                "%s (S-RET shuffles, M-RET opens an artist): "
-                              "%s (S-RET shuffles): ")
-                            prompt)
-                    table nil t)))
+                 (lyrion--step
+                  (lambda ()
+                    (minibuffer-with-setup-hook
+                        (:append (lambda ()
+                                   (use-local-map
+                                    (make-composed-keymap
+                                     lyrion-search-minibuffer-map
+                                     (current-local-map)))
+                                   (lyrion--scroll-start)))
+                      (completing-read
+                       (format (if (seq-intersection kinds
+                                                     '(artist qobuz-artist))
+                                   "%s (S-RET shuffles, M-RET opens an artist): "
+                                 "%s (S-RET shuffles): ")
+                               prompt)
+                       table nil t)))))
         (lyrion--user-error "Nothing chosen"))))
 
 (defun lyrion--play-item (kind item &optional shuffle)
@@ -2099,14 +2196,17 @@ With the connection down, nothing is asked, so the menu opens at once."
 
 (defun lyrion--read-in-order (prompt names)
   "Read one of NAMES, asking for PROMPT, offering them in their own order."
-  (lyrion--with-escape
+  (lyrion--step
    (lambda ()
-     (completing-read prompt
-                      (lambda (string predicate action)
-                        (if (eq action 'metadata)
-                            '(metadata (display-sort-function . identity))
-                          (complete-with-action action names string predicate)))
-                      nil t))))
+     (lyrion--with-escape
+      (lambda ()
+        (completing-read prompt
+                         (lambda (string predicate action)
+                           (if (eq action 'metadata)
+                               '(metadata (display-sort-function . identity))
+                             (complete-with-action action names string
+                                                   predicate)))
+                         nil t))))))
 
 (defun lyrion--channel-name (item)
   "Return the name of ITEM, a Radio Paradise channel or stream, to show.
@@ -2324,6 +2424,7 @@ QOBUZ non-nil means the kinds from Qobuz, otherwise from the library."
   "R" #'lyrion-repeat
   "X" #'lyrion-crossfade
   "/" #'lyrion-search
+  "M-/" #'lyrion-search-resume
   "P" #'lyrion-radio-paradise
   "L" #'lyrion-lyrics
   "C" #'lyrion-lyrics-copy
@@ -2355,6 +2456,8 @@ The player's keys, but for \\`q', which hides the lyrics alone."
 \\[lyrion-volume-up] and \\[lyrion-volume-down] turn the volume up and down.
 \\[lyrion-crossfade] turns smart crossfading on or off.
 \\[lyrion-search] searches the library and plays what is chosen.
+\\[lyrion-search-resume] goes back to the last search, where something was chosen.
+\\[lyrion-radio-paradise] chooses a Radio Paradise channel.
 \\[lyrion-queue] shows the queue and plays the track chosen from it.
 \\[lyrion-lyrics] shows the lyrics beside it.
 \\[lyrion-lyrics-copy] copies them, while they are showing.
@@ -2750,22 +2853,33 @@ tracks, all of them unless some are switched off."
   (lyrion--search (lyrion--chosen-kinds nil) "Search"))
 
 (defun lyrion--search-qobuz ()
-  "Search Qobuz and play what is chosen, as `lyrion-search-qobuz' does."
-  (pcase-let* ((`(,term ,kinds ,count)
-                (lyrion--qobuz-term
-                 (string-trim (lyrion--with-escape
-                               (lambda () (read-string "Search Qobuz: "))))))
-               (kinds (or kinds (lyrion--chosen-kinds t))))
-    (when (string-empty-p term)
-      (lyrion--user-error "Nothing to search for"))
-    (message "Searching Qobuz for %s..." term)
-    (let ((results (seq-filter #'cdr (lyrion--qobuz-search term kinds count)))
-          (lyrion--shuffle-chosen nil)
-          (lyrion--open-chosen nil))
-      (message nil)
-      (unless results
-        (lyrion--user-error "Nothing on Qobuz matches %s" term))
-      (pcase-let ((`(,kind . ,item)
+  "Search Qobuz and play what is chosen, as `lyrion-search-qobuz' does.
+Going back to the search, its results are those found before, not asked
+for again."
+  (let* ((asked (string-trim
+                 (lyrion--step
+                  (lambda ()
+                    (lyrion--with-escape
+                     (lambda () (read-string "Search Qobuz: ")))))))
+         (found (and (equal (car lyrion--qobuz-found) asked)
+                     lyrion--qobuz-found))
+         (results
+          (or (nth 1 found)
+              (pcase-let* ((`(,term ,kinds ,count) (lyrion--qobuz-term asked))
+                           (kinds (or kinds (lyrion--chosen-kinds t))))
+                (when (string-empty-p term)
+                  (lyrion--user-error "Nothing to search for"))
+                (message "Searching Qobuz for %s..." term)
+                (prog1 (or (seq-filter #'cdr (lyrion--qobuz-search term kinds
+                                                                   count))
+                           (lyrion--user-error "Nothing on Qobuz matches %s"
+                                               term))
+                  (message nil)))))
+         (lyrion--shuffle-chosen nil)
+         (lyrion--open-chosen nil))
+    (setq lyrion--qobuz-found (list asked results))
+    (pcase-let ((`(,kind . ,item)
+                 (let ((lyrion--depth (1+ lyrion--depth)))
                    (lyrion--read-or-open
                     (lambda ()
                       (lyrion--read-item
@@ -2779,8 +2893,8 @@ tracks, all of them unless some are switched off."
                            (lambda ()
                              (lyrion--read-release-by
                               (lyrion--item-name kind item) 'qobuz-release
-                              (lyrion--qobuz-artist-releases item))))))))
-        (lyrion--play-item kind item lyrion--shuffle-chosen)))))
+                              (lyrion--qobuz-artist-releases item)))))))))
+      (lyrion--play-item kind item lyrion--shuffle-chosen))))
 
 (defun lyrion-search-qobuz ()
   "Search Qobuz and play what is chosen.
@@ -2822,7 +2936,9 @@ changed while choosing."
     ("w" "Works" lyrion-search-works)
     ("p" "Playlists" lyrion-search-playlists)
     ("/" "Everything" lyrion-search-all)
-    ("q" "Qobuz" lyrion-search-qobuz :if lyrion--qobuz-p)]
+    ("q" "Qobuz" lyrion-search-qobuz :if lyrion--qobuz-p)
+    ("M-/" "Back to the last search" lyrion-search-resume
+     :if (lambda () lyrion--last-search))]
    ["Radio"
     ("P" "Radio Paradise" lyrion-radio-paradise :if lyrion--radio-paradise-p)]
    ["Playback"
@@ -2912,6 +3028,7 @@ stops it."
 
 (defun lyrion--select-on-open (index)
   "Have Vertico, when it is in use, start with candidate INDEX selected.
+INDEX may be a function, called with the candidates, returning it or nil.
 Vertico draws the candidates once the minibuffer opens, and the selection
 moves just after. Vertico has no public way to do this, so its internal
 `vertico--goto' is used, when there; other completion interfaces start at
@@ -2921,8 +3038,11 @@ the first candidate."
              (fboundp 'vertico--exhibit))
     (letrec ((select (lambda ()
                        (remove-hook 'post-command-hook select t)
-                       (vertico--goto index)
-                       (vertico--exhibit))))
+                       (when-let* ((index (if (functionp index)
+                                              (funcall index vertico--candidates)
+                                            index)))
+                         (vertico--goto index)
+                         (vertico--exhibit)))))
       ;; After Vertico's own drawing, which runs at the default depth.
       (add-hook 'post-command-hook select 90 t))))
 
@@ -3141,6 +3261,8 @@ through the queue and the track keeps the menu open; other keys close it."
     ("I" "Inspect the queue" lyrion-queue)]
    ["Library"
     ("/" "Search..." lyrion-search)
+    ("M-/" "Back to the last search" lyrion-search-resume
+     :if (lambda () lyrion--last-search))
     ("P" "Radio Paradise..." lyrion-radio-paradise
      :if lyrion--radio-paradise-p)]]
   ;; A second row, so the menu fits a frame of about 80 columns.

@@ -155,6 +155,7 @@ In the now-playing and lyrics buffers:
 | =X=     | turn smart crossfading on or off                                    |
 | =I=     | inspect the queue and jump to a track                               |
 | =/=     | open the search menu                                                |
+| =M-/=   | go back to the last search, where you chose                         |
 | =P=     | choose a Radio Paradise channel, as =/= =P= does                    |
 | =p=     | choose the player                                                   |
 | =w=     | copy the track as "Artist - Release - Title"                        |
@@ -171,9 +172,9 @@ In the now-playing and lyrics buffers:
 #+attr_org: :width 900
 [[file:images/search-menu.png]]
 
-=q= and =P= appear only when the server has the Qobuz or Radio Paradise plugin. The playback keys work in the menu too and keep it open, as does =L= for the lyrics.
+=q= and =P= appear only when the server has the Qobuz or Radio Paradise plugin. =M-/= appears once a search has played something; see [[#moving-through-a-search][Moving through a search]]. The playback keys work in the menu too and keep it open, as does =L= for the lyrics.
 
-=ESC= backs out of a search one step at a time, and =C-g= leaves it at once; see [[#backing-out][Backing out]].
+=ESC= backs out of a search one step at a time, =C-g= leaves it at once, and =M-/= returns to your last choice; see [[#moving-through-a-search][Moving through a search]].
 
 Above the searches, switches choose the categories that an /Everything/ search (=/=) and a Qobuz search (=q=) include. Each shows as its key and name, lit when on and dimmed when off. All are on at first; press a switch's key to turn it off or on again. Keys that search one category, such as =t= for tracks, ignore the switches.
 
@@ -238,27 +239,47 @@ What plays depends on the kind of result:
 
 Among an artist's releases, =RET= plays the one you pick and =S-RET= shuffles it. The prompt names the keys, and mentions =M-RET= whenever there are artists among the results.
 
-** Backing out
+** Moving through a search
 :PROPERTIES:
-:CUSTOM_ID: backing-out
+:CUSTOM_ID: moving-through-a-search
 :END:
 
-A search can go up to three steps deep: the menu, the results, and an artist's releases opened with =M-RET=. The two quitting keys work differently:
+/This part is opinionated./ =lyrion= treats a search as a path you can walk back along, and return to later. Emacs prompts do not usually behave this way. If it does not suit you, =C-g= always leaves at once, as anywhere in Emacs.
 
-- =ESC= goes back one step, to where you were before.
+A search is a path of up to three steps: the menu, the results, and an artist's releases opened with =M-RET=. Three keys move along it:
+
+- =ESC= goes back one step.
 - =C-g= leaves the search at once, from any step.
+- =M-/= returns to the step where you last chose something to play.
+
+*** ESC: one step back
 
 With =/ q=, a search for Chick Corea, and =M-RET= on the artist, three presses of =ESC= take you back out:
 
 | You are at        | =ESC= takes you to                        |
 |-------------------+-------------------------------------------|
-| the releases      | the Qobuz results, as they were           |
+| the releases      | the Qobuz results, on Chick Corea         |
 | the Qobuz results | the search menu, with its switches as set |
 | the search menu   | where you were before =/=                 |
 
-Going back asks the server nothing new, so the results return at once, Qobuz ones too. =ESC= at the =Search Qobuz:= prompt goes back to the menu. To swap a release search for a track search, press =/ r=, then =ESC= and =t=.
+To swap a release search for a track search, press =/ r=, then =ESC= and =t=.
 
-=ESC= is the same with any completion UI and needs no setup. A search not begun from the menu, such as =P= from the player, has no menu to go back to, so =ESC= leaves it. In a terminal, Emacs can mistake =ESC= for the start of a =Meta= key; use =C-g= there.
+*** M-/: back to your last choice
+
+After a search plays something, =M-/= in the player, the lyrics or the search menu opens that search again, at the step where you chose. The whole list shows, with the result you chose selected. From there =ESC= goes back as it did before, each step on the choice you made at it.
+
+Say you press =/ a=, choose Chick Corea with =M-RET=, then play one of his releases. Later, =M-/= shows his releases again, on the one you played. =ESC= takes you to the album artists, on Chick Corea, so you can choose another artist.
+
+All of this is far easier to use than to describe. Press =M-/= a few times and it will make sense long before this section does ;-)
+
+*** The small print
+
+- =ESC= asks nothing new of the server, so lists return at once. With =M-/=, Qobuz results are the ones found before, and Qobuz is not searched again; only an artist's releases are fetched afresh.
+- =ESC= at the =Search Qobuz:= prompt goes back to the menu. =M-/= passes over that prompt to the results.
+- =M-/= remembers the last search only, for the Emacs session. Choosing something new in it, or in another search, replaces it.
+- A search not begun from the menu, such as =P= from the player, has no menu to go back to, so =ESC= leaves it.
+- The keys work with any completion UI and need no setup. Only =vertico= shows the selection on your earlier choice; others start at the top.
+- In a terminal, Emacs can mistake =ESC= for the start of a =Meta= key. Use =C-g= there.
 
 * Qobuz
 :PROPERTIES:
