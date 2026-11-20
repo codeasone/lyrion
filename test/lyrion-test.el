@@ -2688,6 +2688,8 @@ releases, answers with. Playlists find nothing.")
 (defconst lyrion-test--radio-paradise
   '((nil "id:5e.0" "name:Main Mix" "type:outline" "isaudio:1" "hasitems:1"
          "id:5e.5" "name:Serenity - AAC 64kbps" "type:audio" "isaudio:1"
+         "hasitems:0"
+         "id:5e.6" "name:Velvet - FLAC Interactive" "type:audio" "isaudio:1"
          "hasitems:0")
     ("5e.0" "title:Main Mix"
      "id:5e.0.0" "name:Main Mix - FLAC Interactive" "isaudio:1"
@@ -3034,7 +3036,8 @@ the library's listings their answers would come too late for the menu."
                                             (all-completions "" table)))
                      channel)))
           (lyrion-radio-paradise))
-        (should (equal offered '("Main Mix" "Serenity - AAC 64kbps"))))
+        ;; A channel named after its stream is named without the format.
+        (should (equal offered '("Main Mix" "Serenity" "Velvet"))))
       (should (lyrion-test--wait
                (lambda () (seq-find (lambda (words)
                                       (equal (cadr words) "radioparadise"))
@@ -3050,9 +3053,14 @@ the library's listings their answers would come too late for the menu."
                    "item_id:5e.0.0"))))
 
 (ert-deftest lyrion-test/a-radio-paradise-stream-plays-as-it-is ()
-  (should (equal (lyrion-test--radio-paradise-plays "Serenity - AAC 64kbps")
+  (should (equal (lyrion-test--radio-paradise-plays "Serenity")
                  '("02:00:00:00:00:01" "radioparadise" "playlist" "play"
                    "item_id:5e.5"))))
+
+(ert-deftest lyrion-test/a-radio-paradise-channel-is-named-without-its-format ()
+  (should (equal (lyrion-test--radio-paradise-plays "Velvet")
+                 '("02:00:00:00:00:01" "radioparadise" "playlist" "play"
+                   "item_id:5e.6"))))
 
 (ert-deftest lyrion-test/search-menu-offers-radio-paradise-only-when-there ()
   (let ((layout (format "%S" (get 'lyrion-search-menu 'transient--layout))))

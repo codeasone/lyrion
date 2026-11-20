@@ -1965,6 +1965,13 @@ With the connection down, nothing is asked, so the menu opens at once."
                        (complete-with-action action names string predicate)))
                    nil t))
 
+(defun lyrion--channel-name (item)
+  "Return the name of ITEM, a Radio Paradise channel or stream, to show.
+The plugin names a channel of one stream after it, as in \"Velvet - FLAC
+Interactive\"; the name runs to the first \" - \", leaving out the format."
+  (let ((name (or (lyrion--get item "name") "")))
+    (substring name 0 (string-search " - " name))))
+
 (defun lyrion-radio-paradise ()
   "Choose a Radio Paradise channel and play it in place of the queue.
 A channel with several streams plays its first, the plugin's best: FLAC,
@@ -1973,10 +1980,9 @@ which lets the server skip songs."
   (let* ((channels (lyrion--plugin-items "radioparadise"))
          (name (lyrion--read-in-order
                 "Radio Paradise channel: "
-                (mapcar (lambda (channel) (lyrion--get channel "name"))
-                        channels)))
+                (mapcar #'lyrion--channel-name channels)))
          (channel (seq-find (lambda (channel)
-                              (equal (lyrion--get channel "name") name))
+                              (equal (lyrion--channel-name channel) name))
                             channels))
          (stream (if (equal (lyrion--get channel "hasitems") "1")
                      (seq-find (lambda (item)
@@ -1989,7 +1995,7 @@ which lets the server skip songs."
     (lyrion--player-command
      (list "radioparadise" "playlist" "play"
            (concat "item_id:" (lyrion--get stream "id"))))
-    (message "Playing %s" (lyrion--get stream "name"))))
+    (message "Playing %s" name)))
 
 ;;; Qobuz
 
