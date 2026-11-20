@@ -2781,6 +2781,28 @@ the library's listings their answers would come too late for the menu."
                  '(("playlist" "shuffle" "0")
                    ("playlistcontrol" "cmd:load" "playlist_id:71")))))
 
+(ert-deftest lyrion-test/a-qobuz-search-can-ask-for-fewer-results ()
+  (let ((lyrion-qobuz-results 100))
+    (should (equal (lyrion--qobuz-term "plaid:4") '("plaid" . 4)))
+    (should (equal (lyrion--qobuz-term "Mahler 9 :12") '("Mahler 9" . 12)))
+    (should (equal (lyrion--qobuz-term "plaid") '("plaid" . 100)))
+    ;; Not a count: none at all, or a colon elsewhere.
+    (should (equal (lyrion--qobuz-term "plaid:0") '("plaid:0" . 100)))
+    (should (equal (lyrion--qobuz-term "Mahler: Symphony No. 9")
+                   '("Mahler: Symphony No. 9" . 100)))
+    (should (equal (lyrion--qobuz-term ":4") '("" . 4))))
+  (let ((sent nil))
+    (cl-letf (((symbol-function 'lyrion--query)
+               (lambda (words callback &optional _timeout)
+                 (push words sent)
+                 (funcall callback (append words '("count:0")))))
+              ((symbol-function 'lyrion--player-id) (lambda () "02:00")))
+      (lyrion--qobuz-search "plaid" '(qobuz-release) 4)
+      (should (equal (nth 4 (car sent)) "4"))
+      (lyrion--qobuz-search "plaid" '(qobuz-release))
+      (should (equal (nth 4 (car sent))
+                     (number-to-string lyrion-qobuz-results))))))
+
 (ert-deftest lyrion-test/qobuz-searches-each-chosen-category ()
   (pcase-let ((`(,sent ,offered)
                (lyrion-test--qobuz-sends

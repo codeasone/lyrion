@@ -1963,15 +1963,24 @@ TIMEOUT seconds, by default `lyrion--quick-timeout'."
     (lyrion--wait (lambda () (not (seq-contains-p replies 'waiting))))
     (append replies nil)))
 
-(defun lyrion--qobuz-search (term kinds)
+(defun lyrion--qobuz-term (input)
+  "Return INPUT, a Qobuz search, as (TERM . COUNT).
+INPUT ending in a colon and a number, as in \"plaid:4\", asks for that
+many results of each kind; otherwise COUNT is `lyrion-qobuz-results'."
+  (if (string-match "\\`\\(.*?\\)[ \t]*:\\([1-9][0-9]*\\)\\'" input)
+      (cons (match-string 1 input) (string-to-number (match-string 2 input)))
+    (cons input lyrion-qobuz-results)))
+
+(defun lyrion--qobuz-search (term kinds &optional count)
   "Search Qobuz for items of KINDS matching TERM, as (KIND . ITEMS).
-Each kind is a search of its own, sent at once."
+Each kind is a search of its own, sent at once, for up to COUNT items, by
+default `lyrion-qobuz-results'."
   (let* ((id (lyrion--player-id))
          (replies
           (lyrion--query-all
            (mapcar (lambda (kind)
                      (list id "qobuz" "items" "0"
-                           (number-to-string lyrion-qobuz-results)
+                           (number-to-string (or count lyrion-qobuz-results))
                            ;; The kind's results, without opening the menu.
                            (concat "item_id:0.0."
                                    (alist-get kind lyrion--qobuz-branches))
@@ -2466,17 +2475,20 @@ tracks, all of them unless some are switched off."
   "Search Qobuz and play what is chosen.
 It searches the categories chosen in the search menu that Qobuz has:
 artists, playlists, releases and tracks. Each comes in Qobuz's order, most
-relevant first. The keys are as for the library: an artist plays their
+relevant first, up to `lyrion-qobuz-results' of each; a search ending in
+a colon and a number, as in \"plaid:4\", shows that many instead. The
+keys are as for the library: an artist plays their
 songs, those Qobuz finds for their name, up to 200, and
 \\<lyrion-search-minibuffer-map>\\[lyrion-search-open-exit]
 opens the artist into their releases instead."
   (interactive)
-  (let ((kinds (lyrion--chosen-kinds t))
-        (term (string-trim (read-string "Search Qobuz: "))))
+  (pcase-let* ((kinds (lyrion--chosen-kinds t))
+               (`(,term . ,count)
+                (lyrion--qobuz-term (string-trim (read-string "Search Qobuz: ")))))
     (when (string-empty-p term)
       (user-error "Nothing to search for"))
     (message "Searching Qobuz for %s..." term)
-    (let ((results (seq-filter #'cdr (lyrion--qobuz-search term kinds)))
+    (let ((results (seq-filter #'cdr (lyrion--qobuz-search term kinds count)))
           (lyrion--shuffle-chosen nil)
           (lyrion--open-chosen nil))
       (message nil)

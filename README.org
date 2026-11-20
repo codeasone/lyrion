@@ -242,7 +242,7 @@ Among an artist's releases, =RET= plays the one you pick and =S-RET= shuffles it
 
 When the server has the [[https://www.qobuz.com][Qobuz]] plugin, =q= in the search menu searches Qobuz and streams what you choose.
 
-It searches whichever of artists, playlists, releases and tracks are switched on; works and genres exist only in the library. Results are grouped as in an /Everything/ search, each group in Qobuz's order, most relevant first, and ~lyrion-qobuz-results~ sets how many come back in each. What each result plays is under [[#choosing][Playing what you choose]].
+It searches whichever of artists, playlists, releases and tracks are switched on; works and genres exist only in the library. Results are grouped as in an /Everything/ search, each group in Qobuz's order, most relevant first, and ~lyrion-qobuz-results~ sets how many come back in each. For fewer results in one search, end it with a colon and a number: =plaid:5= shows the top five of each kind. What each result plays is under [[#choosing][Playing what you choose]].
 
 =lyrion= asks the server whether it has the plugin the first time the search menu opens in a session, waiting up to two seconds. If the server does not answer in time, it asks again at the next search; if you install the plugin while =lyrion= is running, =g= in the now-playing buffer asks again.
 
