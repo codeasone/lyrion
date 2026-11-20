@@ -242,7 +242,18 @@ Among an artist's releases, =RET= plays the one you pick and =S-RET= shuffles it
 
 When the server has the [[https://www.qobuz.com][Qobuz]] plugin, =q= in the search menu searches Qobuz and streams what you choose.
 
-It searches whichever of artists, playlists, releases and tracks are switched on; works and genres exist only in the library. Results are grouped as in an /Everything/ search, each group in Qobuz's order, most relevant first, and ~lyrion-qobuz-results~ sets how many come back in each. For fewer results in one search, end it with a colon and a number: =plaid:5= shows the top five of each kind, as here. What each result plays is under [[#choosing][Playing what you choose]].
+It searches whichever of artists, playlists, releases and tracks are switched on; works and genres exist only in the library. Results are grouped as in an /Everything/ search, each group in Qobuz's order, most relevant first, and ~lyrion-qobuz-results~ sets how many come back in each. What each result plays is under [[#choosing][Playing what you choose]].
+
+To narrow one search, end it with a colon, then the kinds you want and how many of each, either or both. The kinds use the search menu's letters: =a= artists, =p= playlists, =r= releases and =t= tracks. Letters override the menu's switches for that search.
+
+| You type           | Qobuz shows                                    |
+|--------------------+------------------------------------------------|
+| =plaid:5=          | the top five of each kind switched on, as here |
+| =honesty:t=        | tracks only                                    |
+| =honesty:t5=       | the top five tracks                            |
+| =joel honesty:rt3= | the top three releases and three tracks        |
+
+Anything else after a colon, as in =Mahler: Symphony No. 9=, is searched as typed.
 
 #+attr_html: :width 900px
 #+attr_org: :width 900

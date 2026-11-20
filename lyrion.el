@@ -2053,13 +2053,33 @@ TIMEOUT seconds, by default `lyrion--quick-timeout'."
     (lyrion--wait (lambda () (not (seq-contains-p replies 'waiting))))
     (append replies nil)))
 
+(defvar lyrion--categories)          ; Defined with the search menu.
+
 (defun lyrion--qobuz-term (input)
-  "Return INPUT, a Qobuz search, as (TERM . COUNT).
-INPUT ending in a colon and a number, as in \"plaid:4\", asks for that
-many results of each kind; otherwise COUNT is `lyrion-qobuz-results'."
-  (if (string-match "\\`\\(.*?\\)[ \t]*:\\([1-9][0-9]*\\)\\'" input)
-      (cons (match-string 1 input) (string-to-number (match-string 2 input)))
-    (cons input lyrion-qobuz-results)))
+  "Return INPUT, a Qobuz search, as (TERM KINDS COUNT).
+INPUT may end in a colon, then the letters of the kinds to search and the
+number of each to show, either or both: a, p, r and t for artists,
+playlists, releases and tracks, as the search menu's switches have them.
+So \"honesty:t5\" asks for the top five tracks, \"plaid:5\" five of each
+kind, and \"joel honesty:rt\" for releases and tracks. Without letters,
+KINDS is nil, for the menu's; without a number, COUNT is
+`lyrion-qobuz-results'."
+  (let ((case-fold-search t))
+    (if (and (string-match (concat "\\`\\(.*?\\)[ \t]*:"
+                                   "\\([aprt]*\\)\\([1-9][0-9]*\\)?\\'")
+                           input)
+             (or (match-beginning 3) (< (match-beginning 2) (match-end 2))))
+        (let ((letters (downcase (match-string 2 input)))
+              (count (match-string 3 input)))
+          (list (match-string 1 input)
+                (delq nil (mapcar (lambda (category)
+                                    (and (string-search
+                                          (substring (car category) 0 1)
+                                          letters)
+                                         (nth 2 category)))
+                                  lyrion--categories))
+                (if count (string-to-number count) lyrion-qobuz-results)))
+      (list input nil lyrion-qobuz-results))))
 
 (defun lyrion--qobuz-search (term kinds &optional count)
   "Search Qobuz for items of KINDS matching TERM, as (KIND . ITEMS).
@@ -2578,16 +2598,17 @@ tracks, all of them unless some are switched off."
   "Search Qobuz and play what is chosen.
 It searches the categories chosen in the search menu that Qobuz has:
 artists, playlists, releases and tracks. Each comes in Qobuz's order, most
-relevant first, up to `lyrion-qobuz-results' of each; a search ending in
-a colon and a number, as in \"plaid:4\", shows that many instead. The
-keys are as for the library: an artist plays their
+relevant first, up to `lyrion-qobuz-results' of each. A search can end
+in a colon and the kinds and number to show, as in \"honesty:t5\" for the
+top five tracks; see `lyrion--qobuz-term'. The keys are as for the
+library: an artist plays their
 songs, those Qobuz finds for their name, up to 200, and
 \\<lyrion-search-minibuffer-map>\\[lyrion-search-open-exit]
 opens the artist into their releases instead."
   (interactive)
-  (pcase-let* ((kinds (lyrion--chosen-kinds t))
-               (`(,term . ,count)
-                (lyrion--qobuz-term (string-trim (read-string "Search Qobuz: ")))))
+  (pcase-let* ((`(,term ,kinds ,count)
+                (lyrion--qobuz-term (string-trim (read-string "Search Qobuz: "))))
+               (kinds (or kinds (lyrion--chosen-kinds t))))
     (when (string-empty-p term)
       (user-error "Nothing to search for"))
     (message "Searching Qobuz for %s..." term)

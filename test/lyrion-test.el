@@ -2919,14 +2919,27 @@ the library's listings their answers would come too late for the menu."
 
 (ert-deftest lyrion-test/a-qobuz-search-can-ask-for-fewer-results ()
   (let ((lyrion-qobuz-results 100))
-    (should (equal (lyrion--qobuz-term "plaid:4") '("plaid" . 4)))
-    (should (equal (lyrion--qobuz-term "Mahler 9 :12") '("Mahler 9" . 12)))
-    (should (equal (lyrion--qobuz-term "plaid") '("plaid" . 100)))
-    ;; Not a count: none at all, or a colon elsewhere.
-    (should (equal (lyrion--qobuz-term "plaid:0") '("plaid:0" . 100)))
+    (should (equal (lyrion--qobuz-term "plaid:4") '("plaid" nil 4)))
+    (should (equal (lyrion--qobuz-term "Mahler 9 :12") '("Mahler 9" nil 12)))
+    (should (equal (lyrion--qobuz-term "plaid") '("plaid" nil 100)))
+    ;; Kinds, by the menu's letters, with or without a number, in the
+    ;; menu's order.
+    (should (equal (lyrion--qobuz-term "Honesty:t5")
+                   '("Honesty" (qobuz-track) 5)))
+    (should (equal (lyrion--qobuz-term "Joel Honesty:t")
+                   '("Joel Honesty" (qobuz-track) 100)))
+    (should (equal (lyrion--qobuz-term "joel honesty:TRa3")
+                   '("joel honesty" (qobuz-artist qobuz-release qobuz-track) 3)))
+    (should (equal (lyrion--qobuz-term "a:b:p")
+                   '("a:b" (qobuz-playlist) 100)))
+    ;; Not a suffix: nothing after the colon, none at all, a kind Qobuz does
+    ;; not have, or a colon elsewhere.
+    (should (equal (lyrion--qobuz-term "plaid:") '("plaid:" nil 100)))
+    (should (equal (lyrion--qobuz-term "plaid:0") '("plaid:0" nil 100)))
+    (should (equal (lyrion--qobuz-term "plaid:g") '("plaid:g" nil 100)))
     (should (equal (lyrion--qobuz-term "Mahler: Symphony No. 9")
-                   '("Mahler: Symphony No. 9" . 100)))
-    (should (equal (lyrion--qobuz-term ":4") '("" . 4))))
+                   '("Mahler: Symphony No. 9" nil 100)))
+    (should (equal (lyrion--qobuz-term ":4") '("" nil 4))))
   (let ((sent nil))
     (cl-letf (((symbol-function 'lyrion--query)
                (lambda (words callback &optional _timeout)
