@@ -2190,9 +2190,18 @@ the keys that would change them say why they do nothing."
             (lyrion--render)
             (should-not (string-search "Up next" (buffer-string)))
             (dolist (command '(lyrion-shuffle-toggle lyrion-shuffle
-                               lyrion-repeat lyrion-play-in-order))
+                               lyrion-repeat lyrion-play-in-order
+                               lyrion-crossfade lyrion-queue))
               (should-error (funcall command) :type 'user-error))
             (should-not sent)
+            ;; The `?' menu greys out the keys that do nothing here.
+            (let ((layout (format "%S" (get 'lyrion-dispatch
+                                            'transient--layout))))
+              (dolist (key '("S" "S-<return>" "O" "R" "X" "I"))
+                (should (string-match-p
+                         (format ":key %S [^()]*:inapt-if lyrion--radio-shown-p"
+                                 key)
+                         layout))))
             ;; Any other stream has them as usual.
             (setf (alist-get "url" lyrion--status nil nil #'equal)
                   "file:///music/alina.flac")

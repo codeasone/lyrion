@@ -341,7 +341,7 @@ When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =P
 #+attr_org: :width 900
 [[file:images/radio-paradise-channels.png]]
 
-=LMS= relays the stream one song at a time, each with its own title and cover, so the card follows the songs as the channel plays. A channel has no order to change, so the card leaves out shuffle, repeat and the track up next, and the =?= menu greys out their keys. The server makes no smart crossfade in a queue of one, which a channel is, so the card leaves that out too; Radio Paradise blends its songs itself anyway.
+=LMS= relays the stream one song at a time, each with its own title and cover, so the card follows the songs as the channel plays. A channel has no order to change, so the card leaves out shuffle, repeat and the track up next, and the =?= menu greys out their keys. Nor has it a queue to inspect, so =I= does nothing either. The server makes no smart crossfade in a queue of one, which a channel is, so the card leaves that out too, and =X= does nothing and is greyed out; Radio Paradise blends its songs itself anyway.
 
 #+attr_html: :width 762px
 #+attr_org: :width 762

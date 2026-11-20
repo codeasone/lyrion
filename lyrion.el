@@ -2707,8 +2707,11 @@ the queue back in order. Either way the music carries on."
   "Turn smart crossfading on or off for the player shown.
 On, tracks crossfade, except successive tracks from one album, which play
 gaplessly. Off, they play with no transition. Any other transition, such
-as a plain crossfade or a fade, counts as on, so it is turned off."
+as a plain crossfade or a fade, counts as on, so it is turned off.
+A Radio Paradise channel blends its songs itself, so there it does nothing."
   (interactive)
+  (when (lyrion--radio-shown-p)
+    (lyrion--user-error "Radio Paradise blends its songs itself"))
   (let* ((buffer (get-buffer lyrion-buffer-name))
          (type (and buffer
                     (lyrion--get (buffer-local-value 'lyrion--transition buffer)
@@ -3058,8 +3061,11 @@ artist and album, all of which match; a track queued twice has a number to
 tell the two apart. Choosing a track plays it where it is, the queue
 staying as it was; choosing the one playing starts it again.
 \\`S-RET' shuffles the queue afresh, as `lyrion-shuffle' does, and shows
-it again in its new order, on the track that then plays first."
+it again in its new order, on the track that then plays first.
+A Radio Paradise channel has no queue to show."
   (interactive)
+  (when (lyrion--radio-shown-p)
+    (lyrion--user-error "Radio Paradise has no queue to inspect"))
   (while (lyrion--queue-once)))
 
 (defun lyrion--queue-once ()
@@ -3257,8 +3263,9 @@ through the queue and the track keeps the menu open; other keys close it."
      :inapt-if lyrion--radio-shown-p)
     ("R" lyrion-repeat :description lyrion--repeat-description
      :inapt-if lyrion--radio-shown-p)
-    ("X" lyrion-crossfade :description lyrion--crossfade-description)
-    ("I" "Inspect the queue" lyrion-queue)]
+    ("X" lyrion-crossfade :description lyrion--crossfade-description
+     :inapt-if lyrion--radio-shown-p)
+    ("I" "Inspect the queue" lyrion-queue :inapt-if lyrion--radio-shown-p)]
    ["Library"
     ("/" "Search..." lyrion-search)
     ("M-/" "Back to the last search" lyrion-search-resume
