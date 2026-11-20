@@ -2560,9 +2560,55 @@ then shows it and sets its volume."
 (ert-deftest lyrion-test/lookup-failure-is-not-remembered ()
   (lyrion-test--with-fresh-cache
     (lyrion-test--with-http (lyrion-test--json 500 "oops")
-      (should (eq (lyrion-test--lookup lyrion-test--track) 'failed))
-      (should (eq (lyrion-test--lookup lyrion-test--track) 'failed))
+      (should (eql (lyrion-test--lookup lyrion-test--track) 500))
+      (should (eql (lyrion-test--lookup lyrion-test--track) 500))
       (should (= 2 (length lyrion-test--requests))))))
+
+(ert-deftest lyrion-test/lookup-fails-when-lrclib-cannot-be-reached ()
+  (lyrion-test--with-fresh-cache
+    (let ((lyrion--http-timeout 0.2))
+      (lyrion-test--with-http nil
+        (should (eq (lyrion-test--lookup lyrion-test--track) 'failed))))))
+
+(ert-deftest lyrion-test/lookup-without-an-artist-searches-by-title ()
+  "LRCLIB's exact lookup refuses an empty artist, so a track without one
+is searched for by its title, then, finding nothing, by its title less its
+version notes, taking the result closest in length."
+  (lyrion-test--with-fresh-cache
+    (lyrion-test--with-http
+        (lambda (path)
+          (if (string-search "Version" path)
+              (lyrion-test--json 200 "[]")
+            (lyrion-test--json
+             200 "[{\"duration\":299,\"plainLyrics\":\"Long\"},{\"duration\":191,\"plainLyrics\":\"Single\"}]")))
+      (should (equal (lyrion-test--lookup
+                      '(nil "Play That Funky Music (Single Version) (Album Version)"
+                            "Pure... Disco/Funk" 183.0))
+                     '((nil . "Single"))))
+      (should (equal lyrion-test--requests
+                     '("/api/search?track_name=Play%20That%20Funky%20Music%20%28Single%20Version%29%20%28Album%20Version%29"
+                       "/api/search?track_name=Play%20That%20Funky%20Music"))))))
+
+(ert-deftest lyrion-test/a-search-that-finds-keeps-the-whole-title ()
+  "A search by the whole title that finds something is not tried again."
+  (lyrion-test--with-fresh-cache
+    (lyrion-test--with-http
+        (lambda (path)
+          (if (string-prefix-p "/api/get" path)
+              (lyrion-test--json 404 "{}")
+            (lyrion-test--json 200 "[{\"duration\":200,\"plainLyrics\":\"Unplugged\"}]")))
+      (should (equal (lyrion-test--lookup '("A" "Song (Acoustic)" "B" 200.0))
+                     '((nil . "Unplugged"))))
+      (should (= 2 (length lyrion-test--requests)))
+      (should (string-search "Song%20%28Acoustic%29" (nth 1 lyrion-test--requests))))))
+
+(ert-deftest lyrion-test/search-title-drops-the-notes-at-the-end ()
+  (should (equal (lyrion--search-title "Song (Single Version) (Album Version)")
+                 "Song"))
+  (should (equal (lyrion--search-title "Song [Remastered 2009]") "Song"))
+  (should (equal (lyrion--search-title "(Don't Fear) The Reaper")
+                 "(Don't Fear) The Reaper"))
+  (should (equal (lyrion--search-title "(Untitled)") "(Untitled)")))
 
 (ert-deftest lyrion-test/lookup-fails-when-the-search-fails ()
   (lyrion-test--with-fresh-cache
@@ -2571,7 +2617,7 @@ then shows it and sets its volume."
           (if (string-prefix-p "/api/get" path)
               (lyrion-test--json 404 "{}")
             (lyrion-test--json 500 "oops")))
-      (should (eq (lyrion-test--lookup lyrion-test--track) 'failed))
+      (should (eql (lyrion-test--lookup lyrion-test--track) 500))
       (should (= 2 (length lyrion-test--requests))))))
 
 (defmacro lyrion-test--in-lyrics (&rest body)
@@ -2635,8 +2681,18 @@ then shows it and sets its volume."
         (lyrion--lyrics-load (current-buffer) lyrion-test--track)
         (should (string-search "Looking up the lyrics" (buffer-string)))
         (should (lyrion-test--wait
-                 (lambda () (string-search "Could not reach LRCLIB"
+                 (lambda () (string-search "LRCLIB could not look them up (HTTP 500)"
                                            (buffer-string)))))))))
+
+(ert-deftest lyrion-test/lyrics-load-says-when-lrclib-is-unreachable ()
+  (lyrion-test--with-fresh-cache
+    (let ((lyrion--http-timeout 0.2))
+      (lyrion-test--with-http nil
+        (lyrion-test--in-lyrics
+          (lyrion--lyrics-load (current-buffer) lyrion-test--track)
+          (should (lyrion-test--wait
+                   (lambda () (string-search "Could not reach LRCLIB"
+                                             (buffer-string))))))))))
 
 (ert-deftest lyrion-test/lyrics-text-has-the-words-alone ()
   (should (equal (lyrion--lyrics-text '((1 . "Eins") (2 . "") (3 . "  Zwei ")))

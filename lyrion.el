@@ -981,40 +981,73 @@ failed."
                            :null-object nil :false-object nil))))))
      tls)))
 
+(defun lyrion--search-title (title)
+  "Return TITLE without the bracketed notes that end it, for searching.
+Notes such as \"(Single Version)\" or \"[Remastered 2009]\" rarely
+appear in LRCLIB's titles. TITLE stays whole when it is nothing but notes."
+  (let ((short (replace-regexp-in-string
+                "\\(?:[ \t]*\\(?:([^()]*)\\|\\[[^][]*\\]\\)\\)+[ \t]*\\'" ""
+                title)))
+    (if (string-blank-p short) title short)))
+
 (defun lyrion--lyrics-lookup (track callback)
   "Look up TRACK's lyrics, then call CALLBACK with them.
-CALLBACK receives the lines, nil when LRCLIB has none, or `failed' when it
-could not be asked. Answers are kept for the session; failures are not."
+CALLBACK receives the lines, nil when LRCLIB has none, `failed' when it
+could not be reached, or the HTTP status of an error it answered with.
+Answers are kept for the session; failures are not.
+LRCLIB's exact lookup needs the artist; without one, or when it finds
+nothing, a search by title, with the artist if known, takes its place,
+and the result closest in length wins. A search finding nothing tries
+again without the notes ending the title; see `lyrion--search-title'."
   (let ((cached (gethash track lyrion--lyrics-cache 'unknown)))
     (if (not (eq cached 'unknown))
         (funcall callback cached)
       (pcase-let* ((`(,artist ,title ,album ,duration) track)
+                   (artist (and artist (not (string-blank-p artist)) artist))
                    (finish (lambda (lyrics)
                              (puthash track lyrics lyrion--lyrics-cache)
-                             (funcall callback lyrics))))
-        (lyrion--lrclib
-         "/get"
-         (delq nil (list (cons "artist_name" (or artist ""))
-                         (cons "track_name" title)
-                         (and album (cons "album_name" album))
-                         (and duration (cons "duration"
-                                             (number-to-string
-                                              (round duration))))))
-         (lambda (answer)
-           (pcase (car answer)
-             (200 (funcall finish (lyrion--lyrics-from-entry (cdr answer))))
-             ;; No exact match: search, and take the closest in length.
-             (404
-              (lyrion--lrclib
-               "/search" (list (cons "artist_name" (or artist ""))
-                               (cons "track_name" title))
-               (lambda (results)
-                 (if (eql (car results) 200)
-                     (funcall finish (lyrion--lyrics-from-entry
-                                      (lyrion--closest-entry (cdr results)
-                                                             duration)))
-                   (funcall callback 'failed)))))
-             (_ (funcall callback 'failed)))))))))
+                             (funcall callback lyrics)))
+                   (fail (lambda (answer)
+                           (funcall callback (or (car answer) 'failed))))
+                   (search
+                    (lambda (title &optional then)
+                      (lyrion--lrclib
+                       "/search"
+                       (delq nil (list (and artist (cons "artist_name" artist))
+                                       (cons "track_name" title)))
+                       (lambda (results)
+                         (cond
+                          ((not (eql (car results) 200))
+                           (funcall fail results))
+                          ((and (null (cdr results)) then)
+                           (funcall then))
+                          (t (funcall finish
+                                      (lyrion--lyrics-from-entry
+                                       (lyrion--closest-entry
+                                        (cdr results) duration)))))))))
+                   ;; The title as it is, then, finding nothing, without
+                   ;; its notes, when that differs.
+                   (search-title
+                    (lambda ()
+                      (let ((short (lyrion--search-title title)))
+                        (funcall search title
+                                 (and (not (equal short title))
+                                      (lambda () (funcall search short))))))))
+        (if (not artist)
+            (funcall search-title)
+          (lyrion--lrclib
+           "/get"
+           (delq nil (list (cons "artist_name" artist)
+                           (cons "track_name" title)
+                           (and album (cons "album_name" album))
+                           (and duration (cons "duration"
+                                               (number-to-string
+                                                (round duration))))))
+           (lambda (answer)
+             (pcase (car answer)
+               (200 (funcall finish (lyrion--lyrics-from-entry (cdr answer))))
+               (404 (funcall search-title))
+               (_ (funcall fail answer))))))))))
 
 (defun lyrion--lyrics-text (lyrics)
   "Return the words of LYRICS without their times, or nil when there are none.
@@ -1121,9 +1154,14 @@ AGAIN non-nil looks them up even when BUFFER already shows TRACK."
              (with-current-buffer buffer
                ;; The track may have changed while LRCLIB answered.
                (when (equal track lyrion--lyrics-track)
-                 (if (eq lyrics 'failed)
-                     (lyrion--lyrics-render track nil "Could not reach LRCLIB")
-                   (lyrion--lyrics-render track lyrics)))))))))))
+                 (cond
+                  ((eq lyrics 'failed)
+                   (lyrion--lyrics-render track nil "Could not reach LRCLIB"))
+                  ((numberp lyrics)
+                   (lyrion--lyrics-render
+                    track nil
+                    (format "LRCLIB could not look them up (HTTP %d)" lyrics)))
+                  (t (lyrion--lyrics-render track lyrics))))))))))))
 
 (defun lyrion--lyrics-follow (track)
   "Show TRACK's lyrics, when the lyrics are on screen."

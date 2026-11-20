@@ -352,7 +352,7 @@ When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =P
 
 * Lyrics
 
-=lyrion= fetches lyrics from [[https://lrclib.net][LRCLIB]] only while they are shown, sending the track's artist, title, album and length. It asks for an exact match first, then takes the search result closest in length, within ten seconds. Answers, misses included, are kept for the session; failed requests are not, so =g= tries again.
+=lyrion= fetches lyrics from [[https://lrclib.net][LRCLIB]] only while they are shown, sending the track's artist, title, album and length. It asks for an exact match first, then takes the search result closest in length, within ten seconds. A track with no artist tag, common on compilations, skips the exact match, which needs one, and is searched for by title alone. Searches leave out notes in brackets at the end of a title, such as /(Single Version)/ or /[Remastered 2009]/, which LRCLIB's titles rarely have. Answers, misses included, are kept for the session; failed requests are not, so =g= tries again. /Could not reach LRCLIB/ means no answer came; an error LRCLIB answers with shows its HTTP status.
 
 Timed lyrics are best effort. Anyone can add lyrics to LRCLIB, anonymously, so timings are only as good as whoever synced them, and the closest match may be a different edit or master. Lines can light up a little early or late, or drift as the song goes on. =lyrion= lights each line 0.3 s early, as singers tend to come in slightly ahead.
 
