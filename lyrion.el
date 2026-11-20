@@ -2558,6 +2558,49 @@ with its position as `playlist index'. Positions count from 0."
 
 (declare-function vertico--goto "vertico")
 
+(defvar lyrion--queue-follow-interval 1
+  "Seconds between looks at the track playing, while the queue is open.")
+
+(defun lyrion--queue-prompt (current total)
+  "Return the queue's prompt, playing CURRENT, a position, of TOTAL tracks."
+  (if current
+      (format "Queue (playing %d of %d): " (1+ current) total)
+    "Queue: "))
+
+(defun lyrion--set-prompt (prompt)
+  "Make PROMPT the minibuffer's prompt, keeping the old one's properties.
+What has been typed, and where point is in it, stay as they were."
+  (let* ((end (minibuffer-prompt-end))
+         (offset (- (point) end)))
+    (unless (equal prompt (buffer-substring-no-properties (point-min) end))
+      (let ((inhibit-read-only t)
+            (properties (text-properties-at (point-min))))
+        (delete-region (point-min) end)
+        (goto-char (point-min))
+        (insert (apply #'propertize prompt properties))
+        (goto-char (+ (minibuffer-prompt-end) (max offset 0)))))))
+
+(defun lyrion--queue-follow (player update)
+  "Call UPDATE with the position playing, while the queue is open.
+It is called in the minibuffer about once a second, the position being
+from the status of PLAYER, a now-playing buffer. Closing the minibuffer
+stops it."
+  (let* ((minibuffer (current-buffer))
+         (timer nil))
+    (setq timer
+          (run-at-time
+           lyrion--queue-follow-interval lyrion--queue-follow-interval
+           (lambda ()
+             (if (not (and (buffer-live-p minibuffer) (buffer-live-p player)))
+                 (cancel-timer timer)
+               (with-current-buffer minibuffer
+                 (funcall update
+                          (lyrion--number
+                           (lyrion--get (buffer-local-value 'lyrion--status
+                                                            player)
+                                        "playlist_cur_index"))))))))
+    (add-hook 'minibuffer-exit-hook (lambda () (cancel-timer timer)) nil t)))
+
 (defun lyrion--select-on-open (index)
   "Have Vertico, when it is in use, start with candidate INDEX selected.
 Vertico draws the candidates once the minibuffer opens, and the selection
@@ -2577,13 +2620,15 @@ the first candidate."
 (defun lyrion-queue ()
   "Show the player's queue in play order, and play the track chosen.
 The track playing is marked, and with Vertico the selection starts on it,
-so the tracks before and after it are a move away.
+so the tracks before and after it are a move away. The mark and the
+prompt follow the player when it moves on to another track.
 The queue is asked for afresh each time. Each track shows its title,
 artist and album, all of which match; a track queued twice has a number to
 tell the two apart. Choosing a track plays it where it is, the queue
 staying as it was; choosing the one playing starts it again."
   (interactive)
-  (let* ((player (buffer-local-value 'lyrion--player (lyrion--player-buffer)))
+  (let* ((buffer (lyrion--player-buffer))
+         (player (buffer-local-value 'lyrion--player buffer))
          (id (or (lyrion--get player "playerid")
                  (user-error "No Lyrion player is shown")))
          (queue (lyrion--queue id))
@@ -2639,15 +2684,22 @@ staying as it was; choosing the one playing starts it again."
                                    (display-sort-function . identity)
                                    (cycle-sort-function . identity))
                       (complete-with-action action texts string predicate))))
+           ;; The track playing may move on while the queue is open.
+           (update (lambda (position)
+                     (when (and position (not (eql position current)))
+                       (setq current position)
+                       (lyrion--set-prompt
+                        (lyrion--queue-prompt current (length texts)))
+                       (when (and (bound-and-true-p vertico--input)
+                                  (fboundp 'vertico--exhibit))
+                         (vertico--exhibit)))))
            (choice (minibuffer-with-setup-hook
                        (:append (lambda ()
                                   (when start (lyrion--select-on-open start))
-                                  (lyrion--scroll-start)))
+                                  (lyrion--scroll-start)
+                                  (lyrion--queue-follow buffer update)))
                      (completing-read
-                      (if current
-                          (format "Queue (playing %d of %d): "
-                                  (1+ current) (length texts))
-                        "Queue: ")
+                      (lyrion--queue-prompt current (length texts))
                       table nil t)))
            (position (gethash (substring-no-properties choice) positions)))
       (unless position

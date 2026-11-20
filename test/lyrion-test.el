@@ -1778,6 +1778,57 @@ track plays it where it is, without loading the queue again."
         (should (equal (funcall sent)
                        '(("02:00:00:00:00:01" "playlist" "index" "2"))))))))
 
+(ert-deftest lyrion-test/the-open-queue-follows-the-track-playing ()
+  "When the player moves on, the mark and the prompt move with it."
+  (lyrion-test--with-server #'lyrion-test--answer
+    (lyrion-test--with-player
+      (should (lyrion-test--wait (lambda () (lyrion-test--shows "Für Alina"))))
+      (let ((lyrion--queue-follow-interval 0.05)
+            (player (current-buffer))
+            (marks nil) (prompt nil))
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (given table &rest _)
+                     (let* ((texts (all-completions "" table))
+                            (affix (alist-get 'affixation-function
+                                              (cdr (funcall table "" nil
+                                                            'metadata))))
+                            (marks-now (lambda ()
+                                         (mapcar #'cadr (funcall affix texts)))))
+                       (with-temp-buffer
+                         (insert given)
+                         (run-hooks 'minibuffer-setup-hook)
+                         (should (equal (funcall marks-now) '("  " "▶ " "  ")))
+                         ;; The player moves on to the third track.
+                         (with-current-buffer player
+                           (push '("playlist_cur_index" . "2") lyrion--status))
+                         (lyrion-test--wait
+                          (lambda () (equal (cadr (funcall marks-now)) "  ")))
+                         (setq marks (funcall marks-now)
+                               prompt (buffer-string))
+                         (run-hooks 'minibuffer-exit-hook))
+                       ;; Choose nothing new: the track playing.
+                       (car (last texts))))))
+          (lyrion-queue))
+        (should (equal marks '("  " "  " "▶ ")))
+        (should (string-prefix-p "Queue (playing 3 of 3): " prompt))))))
+
+(ert-deftest lyrion-test/set-prompt-keeps-the-input ()
+  (with-temp-buffer
+    ;; As a minibuffer's prompt is.
+    (insert (propertize "Queue (playing 1 of 3): " 'face 'minibuffer-prompt
+                        'read-only t 'front-sticky t 'rear-nonsticky t
+                        'field t)
+            "Spi")
+    (goto-char (1- (point-max)))
+    (cl-letf (((symbol-function 'minibuffer-prompt-end)
+               (lambda () (next-single-property-change (point-min) 'read-only
+                                                       nil (point-max)))))
+      (lyrion--set-prompt "Queue (playing 2 of 3): ")
+      (should (equal (buffer-string) "Queue (playing 2 of 3): Spi"))
+      (should (eq (get-text-property 1 'face) 'minibuffer-prompt))
+      (should-not (get-text-property (- (point-max) 1) 'read-only))
+      (should (equal (buffer-substring (point) (point-max)) "i")))))
+
 (ert-deftest lyrion-test/a-track-queued-twice-is-told-apart ()
   "Without positions, the second copy of a track gets a number of its own,
 and choosing it plays that copy."
