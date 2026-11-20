@@ -3153,4 +3153,41 @@ the library's listings their answers would come too late for the menu."
     (should (string-search "lyrion-radio-paradise" layout))
     (should (string-search ":if lyrion--radio-paradise-p" layout))))
 
+;;; Messages
+
+(ert-deftest lyrion-test/message-clears-itself ()
+  "A notice goes after `lyrion-message-seconds', but not one replacing it."
+  (let ((lyrion-message-seconds 0.1)
+        (showing nil))
+    (cl-letf (((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq showing (and format-string
+                                    (apply #'format format-string args)))))
+              ((symbol-function 'current-message) (lambda () showing)))
+      (should (equal (lyrion--message "Playing %s" "Main Mix")
+                     "Playing Main Mix"))
+      (should (lyrion-test--wait (lambda () (null showing)) 1))
+      (lyrion--message "Crossfade off")
+      (message "Something else")
+      (sleep-for 0.2)
+      (should (equal showing "Something else"))
+      (let ((lyrion-message-seconds nil))
+        (lyrion--message "Stopped squeezelite")
+        (should-not lyrion--message-timer)))))
+
+(ert-deftest lyrion-test/user-errors-clear-themselves ()
+  "An error from lyrion goes after `lyrion-message-seconds' too."
+  (let ((lyrion-message-seconds 0.1)
+        (showing nil))
+    (cl-letf (((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq showing (and format-string
+                                    (apply #'format format-string args)))))
+              ((symbol-function 'current-message) (lambda () showing)))
+      (should (equal (should-error (lyrion--user-error "No %s" "lyrics")
+                                   :type 'user-error)
+                     '(user-error "No lyrics")))
+      (setq showing "No lyrics")
+      (should (lyrion-test--wait (lambda () (null showing)) 1)))))
+
 ;;; lyrion-test.el ends here

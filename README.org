@@ -350,6 +350,7 @@ Not supported yet. =lyrion= connects without a user name or password, which suit
 | ~lyrion-volume-step~             | ~5~                      | the volume change per key press, out of 100                                             |
 | ~lyrion-cover-size~              | ~32~                     | the cover's longest side, in em                                                         |
 | ~lyrion-progress-width~          | ~32~                     | the progress bar's width, in columns                                                    |
+| ~lyrion-message-seconds~         | ~3~                      | seconds a notice such as /Playing .../ stays in the echo area; ~nil~ keeps it           |
 | ~lyrion-reconnect-delay~         | ~5~                      | seconds to wait before reconnecting after a drop                                        |
 | ~lyrion-lyrics-url~              | ~https://lrclib.net/api~ | where the lyrics come from                                                              |
 | ~lyrion-lyrics-side~             | ~right~                  | the side the lyrics open on                                                             |

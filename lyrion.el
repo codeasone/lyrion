@@ -122,6 +122,11 @@ Nil leaves the volume Lyrion has for it."
   "Width of the progress bar, in columns."
   :type 'natnum)
 
+(defcustom lyrion-message-seconds 3
+  "Seconds a notice such as \"Playing ...\" stays in the echo area.
+nil leaves notices until something else replaces them."
+  :type '(choice (number :tag "Seconds") (const :tag "Keep" nil)))
+
 (defcustom lyrion-reconnect-delay 5
   "Seconds to wait before connecting again after the connection drops."
   :type 'number)
@@ -361,8 +366,8 @@ for the address."
   (unless (or (process-live-p lyrion--squeezelite)
               (lyrion--squeezelite-elsewhere-p))
     (unless (executable-find lyrion-squeezelite-program)
-      (user-error "Cannot find %s, which makes this computer a player"
-                  lyrion-squeezelite-program))
+      (lyrion--user-error "Cannot find %s, which makes this computer a player"
+                          lyrion-squeezelite-program))
     (setq lyrion--squeezelite
           (make-process :name "lyrion-squeezelite"
                         :buffer "*lyrion squeezelite*"
@@ -465,6 +470,38 @@ WANTED is a player's name or id, or nil for the one playing."
                     players)
           (seq-find (lambda (player) (funcall on player "connected")) players)
           (car players)))))
+
+;;; Messages
+
+(defvar lyrion--message-timer nil
+  "Timer that clears the last notice, or nil.")
+
+(defun lyrion--clear-later (text)
+  "Clear TEXT from the echo area after `lyrion-message-seconds'.
+It stays if another message has replaced it by then."
+  (when lyrion--message-timer
+    (cancel-timer lyrion--message-timer))
+  (setq lyrion--message-timer
+        (and lyrion-message-seconds
+             (run-at-time lyrion-message-seconds nil
+                          (lambda ()
+                            (setq lyrion--message-timer nil)
+                            (when (equal (current-message) text)
+                              (message nil)))))))
+
+(defun lyrion--message (format-string &rest args)
+  "Show FORMAT-STRING with ARGS as `message' does, for a short while.
+See `lyrion--clear-later'. Return the notice."
+  (let ((text (apply #'message format-string args)))
+    (lyrion--clear-later text)
+    text))
+
+(defun lyrion--user-error (format-string &rest args)
+  "Signal a `user-error' with FORMAT-STRING and ARGS, shown for a short while.
+See `lyrion--clear-later'."
+  (let ((text (apply #'format-message format-string args)))
+    (lyrion--clear-later text)
+    (signal 'user-error (list text))))
 
 ;;; Time
 
@@ -670,7 +707,7 @@ shuffle or repeat."
   "Signal an error when the player shown plays Radio Paradise.
 For the commands that shuffle, repeat or reorder the queue."
   (when (lyrion--radio-shown-p)
-    (user-error "Radio Paradise has no shuffle or repeat")))
+    (lyrion--user-error "Radio Paradise has no shuffle or repeat")))
 
 (defun lyrion--player-parts ()
   "Return the parts of the player line, as strings, in order.
@@ -1178,7 +1215,7 @@ This computer's player, just started, is waited for until it connects."
       (when (and was now (not (equal was now))
                  (equal (lyrion--get old "player_name")
                         (lyrion--get status "player_name")))
-        (message "Volume %s%%" now)))
+        (lyrion--message "Volume %s%%" now)))
     (setq lyrion--status status
           lyrion--status-time (float-time))
     (unless (equal path (car lyrion--cover))
@@ -1394,7 +1431,7 @@ The player's own connection is the first to know when the server goes."
   "Signal that the server is not connected, when that is known.
 Waiting for an answer then would only hold Emacs up for nothing."
   (when (lyrion--disconnected-p)
-    (user-error "Not connected to %s" lyrion-host)))
+    (lyrion--user-error "Not connected to %s" lyrion-host)))
 
 (defun lyrion--wait (done &optional doing)
   "Wait for the server, until calling DONE gives non-nil.
@@ -1482,8 +1519,8 @@ Works come as recordings, which need the releases listed too."
       (message nil))
     (dolist (kind wanted)
       (unless (assq kind lyrion--library)
-        (user-error "Could not list the %s on %s"
-                    (downcase (nth 1 (assq kind lyrion--kinds))) lyrion-host)))
+        (lyrion--user-error "Could not list the %s on %s"
+                            (downcase (nth 1 (assq kind lyrion--kinds))) lyrion-host)))
     (mapcar (lambda (kind)
               (cons kind (if (eq kind 'work)
                              (lyrion--recordings (alist-get 'work results)
@@ -1837,7 +1874,7 @@ artists among KINDS."
                               "%s (S-RET shuffles): ")
                             prompt)
                     table nil t)))
-        (user-error "Nothing chosen"))))
+        (lyrion--user-error "Nothing chosen"))))
 
 (defun lyrion--play-item (kind item &optional shuffle)
   "Play ITEM, an item of KIND, in place of the queue, shuffled when SHUFFLE.
@@ -1863,8 +1900,8 @@ shuffled choice would leave every later one shuffled too."
       (list "playlistcontrol" "cmd:load"
             (format "%s_id:%s" (nth 2 (assq kind lyrion--kinds))
                     (lyrion--get item "id"))))))
-  (message "%s %s" (if shuffle "Shuffling" "Playing")
-           (lyrion--item-name kind item)))
+  (lyrion--message "%s %s" (if shuffle "Shuffling" "Playing")
+                   (lyrion--item-name kind item)))
 
 (defun lyrion--artist-releases (artist)
   "Return the library's releases by ARTIST, an album artist, oldest first."
@@ -1879,7 +1916,7 @@ shuffled choice would leave every later one shuffled too."
 They keep their order. The keys start afresh: RET, S-RET and M-RET then
 choose how the release plays."
   (unless releases
-    (user-error "No releases by %s" name))
+    (lyrion--user-error "No releases by %s" name))
   (setq lyrion--shuffle-chosen nil
         lyrion--open-chosen nil)
   (lyrion--read-item (list kind) (format "Release by %s" name)
@@ -1991,11 +2028,11 @@ which lets the server skip songs."
                                 "radioparadise" (lyrion--get channel "id")))
                    channel)))
     (unless stream
-      (user-error "Radio Paradise has no stream for %s" name))
+      (lyrion--user-error "Radio Paradise has no stream for %s" name))
     (lyrion--player-command
      (list "radioparadise" "playlist" "play"
            (concat "item_id:" (lyrion--get stream "id"))))
-    (message "Playing %s" name)))
+    (lyrion--message "Playing %s" name)))
 
 ;;; Qobuz
 
@@ -2104,7 +2141,7 @@ default `lyrion-qobuz-results'."
                    kinds)
            lyrion--qobuz-timeout)))
     (when (memq nil replies)
-      (user-error "%s did not answer the search" lyrion-host))
+      (lyrion--user-error "%s did not answer the search" lyrion-host))
     (seq-mapn (lambda (kind reply)
                 (cons kind (lyrion--qobuz-items kind reply)))
               kinds replies)))
@@ -2152,8 +2189,8 @@ QOBUZ non-nil means the kinds from Qobuz, otherwise from the library."
                             (and (member (car category) chosen)
                                  (nth (if qobuz 2 1) category)))
                           lyrion--categories))
-        (user-error "No category chosen%s; switch one on in the menu"
-                    (if qobuz " that Qobuz has" "")))))
+        (lyrion--user-error "No category chosen%s; switch one on in the menu"
+                            (if qobuz " that Qobuz has" "")))))
 
 ;;; Commands
 
@@ -2264,7 +2301,7 @@ Timed lyrics light the line being sung and keep it in view.
 (defun lyrion--player-buffer ()
   "Return the now-playing buffer, or signal that lyrion is not open."
   (or (get-buffer lyrion-buffer-name)
-      (user-error "Lyrion is not open")))
+      (lyrion--user-error "Lyrion is not open")))
 
 (defun lyrion--restart (buffer)
   "Connect BUFFER to the server again and choose its player afresh."
@@ -2297,7 +2334,7 @@ signal FAILURE, a format string given the server's name."
     (lyrion--query words (lambda (words) (setq reply words))
                    (or timeout lyrion--quick-timeout))
     (lyrion--wait (lambda () (not (eq reply 'waiting))))
-    (or reply (user-error (or failure "%s did not answer") lyrion-host))))
+    (or reply (lyrion--user-error (or failure "%s did not answer") lyrion-host))))
 
 (defun lyrion--player-choice (player)
   "Return PLAYER as a choice to offer: its name and whether it is playing."
@@ -2332,7 +2369,7 @@ The choice lasts while lyrion is open; `lyrion-player' sets the first."
     (let ((choice (cdr (assoc (completing-read "Player: " choices nil t)
                               choices))))
       (unless choice
-        (user-error "No player chosen"))
+        (lyrion--user-error "No player chosen"))
       (when (equal (lyrion--get choice "playerid") local)
         (lyrion--start-local buffer))
       (with-current-buffer buffer
@@ -2344,15 +2381,15 @@ The choice lasts while lyrion is open; `lyrion-player' sets the first."
   "Stop the squeezelite lyrion started, so this computer is no longer a player."
   (interactive)
   (if (not (process-live-p lyrion--squeezelite))
-      (message "Squeezelite is not running")
+      (lyrion--message "Squeezelite is not running")
     (delete-process lyrion--squeezelite)
-    (message "Stopped squeezelite")))
+    (lyrion--message "Stopped squeezelite")))
 
 (defun lyrion--player-id ()
   "Return the id of the player shown, or signal that there is none."
   (let ((buffer (get-buffer lyrion-buffer-name)))
     (unless (and buffer (buffer-local-value 'lyrion--player buffer))
-      (user-error "No Lyrion player is shown"))
+      (lyrion--user-error "No Lyrion player is shown"))
     (lyrion--get (buffer-local-value 'lyrion--player buffer) "playerid")))
 
 (defun lyrion--player-command (words)
@@ -2362,7 +2399,7 @@ WORDS may be a function of the player's status returning them."
   (let ((buffer (get-buffer lyrion-buffer-name)))
     (with-current-buffer buffer
       (unless (process-live-p lyrion--process)
-        (user-error "Not connected to %s" lyrion-host))
+        (lyrion--user-error "Not connected to %s" lyrion-host))
       (lyrion--send (cons (lyrion--get lyrion--player "playerid")
                           (if (functionp words)
                               (funcall words lyrion--status)
@@ -2464,14 +2501,14 @@ as a plain crossfade or a fade, counts as on, so it is turned off."
     (lyrion--player-command
      (lambda (_status)
        (unless type
-         (user-error "The player's crossfade setting is not known yet"))
+         (lyrion--user-error "The player's crossfade setting is not known yet"))
        (if (equal type "0")
            '("playerpref" "transitionType" "1")
          '("playerpref" "transitionType" "0"))))
     (if (equal type "0")
         (progn (lyrion--player-command '("playerpref" "transitionSmart" "1"))
-               (message "Smart crossfade on"))
-      (message "Crossfade off"))))
+               (lyrion--message "Smart crossfade on"))
+      (lyrion--message "Crossfade off"))))
 
 (defun lyrion-lyrics ()
   "Show the lyrics of the track playing beside the player, or hide them.
@@ -2526,11 +2563,11 @@ off. The player line shows when it will sleep."
                   nil t))
          (minutes (cdr (assoc choice lyrion--sleep-choices))))
     (unless minutes
-      (user-error "Nothing chosen"))
+      (lyrion--user-error "Nothing chosen"))
     (lyrion--player-command (list "sleep" (number-to-string (* 60 minutes))))
-    (message (if (zerop minutes)
-                 "Sleep timer off"
-               (format "Sleeping in %d minutes" minutes)))))
+    (if (zerop minutes)
+        (lyrion--message "Sleep timer off")
+      (lyrion--message "Sleeping in %d minutes" minutes))))
 
 (defun lyrion-copy-track ()
   "Copy the track playing as \"Artist - Release - Title\", for pasting.
@@ -2539,13 +2576,13 @@ An artist or release the server does not know is left out."
   (let* ((status (buffer-local-value 'lyrion--status (lyrion--player-buffer)))
          (title (or (lyrion--get status "title")
                     (lyrion--get status "current_title")
-                    (user-error "Nothing is playing")))
+                    (lyrion--user-error "Nothing is playing")))
          (text (string-join (delq nil (list (lyrion--get status "artist")
                                             (lyrion--get status "album")
                                             title))
                             " - ")))
     (kill-new text)
-    (message "Copied %s" text)))
+    (lyrion--message "Copied %s" text)))
 
 (defun lyrion-lyrics-copy ()
   "Copy the lyrics showing, without their times, for pasting elsewhere."
@@ -2557,10 +2594,10 @@ An artist or release the server does not know is left out."
                     (lyrion--lyrics-text
                      (buffer-local-value 'lyrion--lyrics-all buffer)))))
     (unless text
-      (user-error "No lyrics are showing"))
+      (lyrion--user-error "No lyrics are showing"))
     (kill-new text)
-    (message "Copied the lyrics, %d lines"
-             (length (split-string text "\n" t)))))
+    (lyrion--message "Copied the lyrics, %d lines"
+                     (length (split-string text "\n" t)))))
 
 (defun lyrion-search-tracks ()
   "Choose a track from the library and play it alone."
@@ -2616,14 +2653,14 @@ opens the artist into their releases instead."
                 (lyrion--qobuz-term (string-trim (read-string "Search Qobuz: "))))
                (kinds (or kinds (lyrion--chosen-kinds t))))
     (when (string-empty-p term)
-      (user-error "Nothing to search for"))
+      (lyrion--user-error "Nothing to search for"))
     (message "Searching Qobuz for %s..." term)
     (let ((results (seq-filter #'cdr (lyrion--qobuz-search term kinds count)))
           (lyrion--shuffle-chosen nil)
           (lyrion--open-chosen nil))
       (message nil)
       (unless results
-        (user-error "Nothing on Qobuz matches %s" term))
+        (lyrion--user-error "Nothing on Qobuz matches %s" term))
       (pcase-let ((`(,kind . ,item)
                    (lyrion--read-item
                     (mapcar #'car results) "Qobuz"
@@ -2779,7 +2816,7 @@ staying as it was; choosing the one playing starts it again."
   (let* ((buffer (lyrion--player-buffer))
          (player (buffer-local-value 'lyrion--player buffer))
          (id (or (lyrion--get player "playerid")
-                 (user-error "No Lyrion player is shown")))
+                 (lyrion--user-error "No Lyrion player is shown")))
          (queue (lyrion--queue id))
          (current (car queue))
          (positions (make-hash-table :test #'equal))
@@ -2812,7 +2849,7 @@ staying as it was; choosing the one playing starts it again."
                                                    positions)
                                           position))))))
     (unless texts
-      (user-error "The queue is empty"))
+      (lyrion--user-error "The queue is empty"))
     (let* ((affix (lambda (candidates)
                     (lyrion--fit-to-window
                      (mapcar (lambda (candidate)
@@ -2859,7 +2896,7 @@ staying as it was; choosing the one playing starts it again."
                    (let ((position (gethash (substring-no-properties choice)
                                             positions)))
                      (unless position
-                       (user-error "Nothing chosen"))
+                       (lyrion--user-error "Nothing chosen"))
                      (lyrion--player-command
                       (list "playlist" "index" (number-to-string position)))
                      position)))
@@ -2871,7 +2908,7 @@ staying as it was; choosing the one playing starts it again."
                                           (nth vertico--index
                                                vertico--candidates))))
                        (funcall update (funcall play choice) t)
-                     (user-error "Nothing chosen"))))
+                     (lyrion--user-error "Nothing chosen"))))
            (choice (minibuffer-with-setup-hook
                        (:append (lambda ()
                                   (when start (lyrion--select-on-open start))
