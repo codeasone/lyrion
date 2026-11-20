@@ -386,7 +386,9 @@ If it serves no other purpose than to inspire remixes of your own, that's reason
 
 * Development
 
-=make test= runs the test suite. =make lint= byte-compiles with warnings as errors and runs =checkdoc=.
+=make test= runs the test suite.
+
+=make lint= byte-compiles with warnings as errors and runs =checkdoc=.
 
 =make coverage= runs the tests under [[https://github.com/undercover-el/undercover.el][undercover]], which it installs into =.deps= the first time, and writes an lcov report to =coverage/lcov.info=. It fails when the tests run less than =COVERAGE_MIN= per cent of =lyrion.el=, 90 by default.
 
