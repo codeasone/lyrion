@@ -2056,7 +2056,7 @@ The player's keys, but for \\`q', which hides the lyrics alone."
   :parent lyrion-mode-map
   "q" #'quit-window)
 
-(define-derived-mode lyrion-mode special-mode "Lyrion"
+(define-derived-mode lyrion-mode special-mode "Now Playing"
   "Show what a Lyrion Music Server player is playing.
 \\<lyrion-mode-map>\\[lyrion-play-pause] plays or pauses.
 \\[lyrion-shuffle] shuffles the queue afresh and plays it from the top.
@@ -2082,7 +2082,7 @@ library anew."
   (add-hook 'kill-buffer-hook #'lyrion--close nil t)
   (setq lyrion--timer (run-with-timer 1 1 #'lyrion--tick (current-buffer))))
 
-(define-derived-mode lyrion-lyrics-mode special-mode "Lyrion lyrics"
+(define-derived-mode lyrion-lyrics-mode special-mode "Lyrics"
   "Show the lyrics of the track a Lyrion player is playing.
 Timed lyrics light the line being sung and keep it in view.
 \\<lyrion-lyrics-mode-map>\\[lyrion-play-pause] plays or pauses.
