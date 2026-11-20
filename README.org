@@ -30,7 +30,7 @@ With =vertico=, a search shows every result before you type, so you can browse t
 - The server owns the queue, along with each player's shuffle, repeat and crossfade settings. Choosing something to play replaces the queue on the server, and =<= and =>= move through it there. =lyrion= can ask the server to shuffle the queue, but never adds, removes or moves tracks in it itself, nor keeps a copy; inspecting it with =I= fetches it afresh each time.
 - Nothing is polled. =lyrion= keeps one connection open to the server's CLI, which despite its name is a line-based text protocol over TCP, and subscribes to the player's status. The server sends the full status whenever anything changes, and Emacs counts the elapsed time in between.
 - Covers come from the server's web port and lyrics from =LRCLIB= over TLS. Both are fetched with a few lines of HTTP/1.0 over network processes rather than =url.el=, and every request has a timeout.
-- Search lists the library once a session, on separate connections, starting in the background when the menu opens, so it never holds up the card.
+- Search fetches the library from the server once per session, starting in the background as soon as the search menu opens. It does so over connections of its own, so a long listing never delays updates to the now-playing card.
 - The now-playing and lyrics buffers are =special-mode= buffers: single keys run commands, and there is nothing to edit. Both take the same keys.
 - Everything is meant to be done from the keyboard, and =?= lists every key. Mouse support is not a goal; whatever a click does comes from Emacs itself.
 
@@ -49,18 +49,18 @@ With =vertico=, a search shows every result before you type, so you can browse t
 
 =M-x lyrion= opens the now-playing buffer, showing whichever player is playing. To play on this computer or pick a player, see [[#the-player][The player]].
 
-=lyrion= works with any completion UI, but it is made for =vertico=. With =vertico=, long results fit the window and the selected one scrolls, and the queue opens on the track playing. See [[#searching][Searching]].
+=lyrion= works with any completion UI, but =vertico= is a match made in heaven.
 
 * Getting started
 
-=lyrion= needs an =LMS= host that it can reach, and a player to show.
+=lyrion= needs an =LMS= server ~lyrion-host~ that it can reach, and a player to show.
 
 ** The server
 :PROPERTIES:
 :CUSTOM_ID: the-server
 :END:
 
-~lyrion-host~ names the server. =LMS= listens on three ports, shown here with their defaults. If yours uses others for the CLI or the web server, set ~lyrion-cli-port~ or ~lyrion-http-port~.
+=LMS= listens on three ports, shown here with their defaults. If yours uses others for the CLI or the web server, set ~lyrion-cli-port~ or ~lyrion-http-port~ accordingly.
 
 | Port | What =LMS= serves there                                        | Used by                                |
 |------+----------------------------------------------------------------+----------------------------------------|
@@ -85,9 +85,9 @@ Qobuz takes a different route, as shown under [[#qobuz][Qobuz]].
 
 *** An existing player
 
-For a network streamer or a =squeezelite= on another machine, set ~lyrion-player~ to the player's name as =LMS= shows it. Case does not matter, and its internal id - the MAC address - works too. If no player has that name, the now-playing card says so and keeps looking. If =nil=, =lyrion= shows whichever player is playing, or failing that the first one connected.
+For a network streamer or a =squeezelite= on another machine, set ~lyrion-player~ to the player's name as =LMS= shows it. Case does not matter, and its internal id - the MAC address - works too. If no player has that name, the now-playing card says so and keeps looking. If ~nil~, =lyrion= shows whichever player is playing, or failing that the first one connected.
 
-For example, to show the WiiM Ultra whenever =lyrion= opens:
+For example, to show and control a WiiM Ultra whenever =lyrion= opens:
 
 #+begin_src elisp
 (use-package lyrion
@@ -123,17 +123,19 @@ These steps are for Linux. =squeezelite= runs on macOS and Windows too, so they 
      (lyrion-player 'local))
    #+end_src
 
-If something after =squeezelite= controls the level, such as the system volume, a DAC or an amplifier, set ~lyrion-local-volume~ to ~100~. =squeezelite= then sends the audio unattenuated, and the level is set once, downstream, which preserves the signal-to-noise ratio.
+If something after =squeezelite= controls the level, such as the system volume, a DAC or an amplifier, set ~lyrion-local-volume~ to ~100~. =squeezelite= then sends the audio without digital attenuation, and the level is set once, downstream, which preserves the signal-to-noise ratio.
 
 #+begin_quote
 *Warning:* do not set ~lyrion-local-volume~ to ~100~ if nothing after =squeezelite= controls the level, for example when a sound card or DAC feeds a power amplifier directly. The output is then full scale and can damage speakers or hearing. When configured, =lyrion= applies the setting every time it starts =squeezelite=, so a lower level set in =LMS= does not last.
 #+end_quote
 
-The player joins the server's list when it connects. Its name is ~lyrion-squeezelite-name~, ="Emacs on HOST"= by default. Its address derives from the name, so the server keeps its settings, such as volume and ReplayGain, between sessions. A new name makes a new player.
+The player joins the server's list when it connects. Its name is ~lyrion-squeezelite-name~, ="Emacs on <hostname>"= by default. Its address derives from the name, so the server keeps its settings, such as volume and ReplayGain, between sessions. A new name makes a new player.
 
-If the now-playing card stays on "Waiting for NAME to connect", check that this computer can reach port 3483 on the server. If it connects but plays no sound, check port 9000. =squeezelite='s own output can be inspected in the =*lyrion squeezelite*= buffer.
+If the now-playing card stays on "Waiting for Emacs on <hostname> to connect" (or the name you gave the player), check that this computer can reach port 3483 on the server. If it connects but plays no sound, check port 9000. =squeezelite='s own output can be inspected in the =*lyrion squeezelite*= buffer.
 
-=squeezelite= keeps running after the now-playing buffer is closed, so the music doesn't stop. =M-x lyrion-local-player-stop= stops it, as does killing =*lyrion squeezelite*= or quitting Emacs. If a =squeezelite= with this computer's address is already running, =lyrion= uses it rather than starting another.
+=squeezelite= keeps running after the now-playing buffer is closed, so the music doesn't stop. =M-x lyrion-local-player-stop= stops it, as does killing =*lyrion squeezelite*= or quitting Emacs.
+
+If a =squeezelite= with this computer's address is already running, =lyrion= uses it rather than starting another.
 
 * Keys
 :PROPERTIES:
@@ -172,11 +174,11 @@ In the now-playing and lyrics buffers:
 #+attr_org: :width 900
 [[file:images/search-menu.png]]
 
-=q= and =P= appear only when the server has the Qobuz or Radio Paradise plugin. =M-/= appears once a search has played something; see [[#moving-through-a-search][Moving through a search]]. The playback keys work in the menu too and keep it open, as does =L= for the lyrics.
+=q= and =P= appear only when the server has the respective Qobuz or Radio Paradise plugins installed and configured. =M-/= appears once a search has played something. The playback keys work in the menu too and keep it open, as does =L= for the lyrics.
 
 =ESC= backs out of a search one step at a time, =C-g= leaves it at once, and =M-/= returns to your last choice; see [[#moving-through-a-search][Moving through a search]].
 
-Above the searches, switches choose the categories that an /Everything/ search (=/=) and a Qobuz search (=q=) include. Each shows as its key and name, lit when on and dimmed when off. All are on at first; press a switch's key to turn it off or on again. Keys that search one category, such as =t= for tracks, ignore the switches.
+Above the searches, switches choose the categories that an /Everything/ search (=/=) and a Qobuz search (=q=) include by default. Each shows as its key and name, lit when on and dimmed when off. All are on at first; toggle a switch's key to turn it off or on again. Searching one category, such as =t= for tracks, ignore the switches.
 
 | Switch | Category                                 |
 |--------+------------------------------------------|
@@ -187,7 +189,7 @@ Above the searches, switches choose the categories that an /Everything/ search (
 | =-w=   | works (library only)                     |
 | =-t=   | tracks                                   |
 
-Switches last only while the menu is open, unless you keep them with one of transient's own keys, which work in any transient menu:
+Switches last only while the menu is open, unless you keep them with one of transient's own persistence options, which work in any transient menu:
 
 - =C-x s= sets them for the rest of this Emacs session.
 - =C-x C-s= saves them for later sessions too, in transient's =transient-values-file=. The menu's heading reminds you of this key.
@@ -201,15 +203,19 @@ Each result has an icon for its kind and some dimmed details: a track shows its 
 
 The details match what you type too, so =hiromi clair= narrows the many recordings of Clair de Lune to Hiromi's. In a release search, an artist's name lists their releases with their years, and a year such as =1983= lists what came out that year.
 
-Results are sorted alphabetically, ignoring case. An /Everything/ search groups them in this order: album artists, genres, playlists, releases, works and tracks, leaving out any you have switched off. When =prescient= sorts the completions, your three most recent and frequent choices among the results come first, under /Recent/, and the rest stay in alphabetical order. ~lyrion-search-recent~ sets how many; 0 leaves every result in alphabetical order. =prescient='s length rule is turned off, as length means little for music.
+Results are sorted alphabetically, ignoring case. An /Everything/ search groups them in this order: album artists, genres, playlists, releases, works and tracks, leaving out any you have switched off.
+
+If you use =prescient= with =vertico=, through =vertico-prescient=, your three most recent and frequent choices among the results come first, under /Recent/, and the rest stay in alphabetical order. ~lyrion-search-recent~ sets how many; 0 leaves every result in alphabetical order. =prescient='s length rule is turned off, as length means little for music. Without it, the results stay alphabetical, grouped as above.
 
 #+attr_html: :width 900px
 #+attr_org: :width 900
 [[file:images/search.png]]
 
-With =vertico=, a result too wide for the window is shortened with an ellipsis, details first. The selected result scrolls to its end and back, so you can read it all; set ~lyrion-search-scroll~ to nil to stop it. Inspecting the queue scrolls the same way.
+With =vertico=, a result too wide for the window is shortened with an ellipsis, details first. The selected result scrolls to its end and back, so you can read it all; set ~lyrion-search-scroll~ to ~nil~ to stop that behaviour if you don't like it. Inspecting long queue items scrolls the same way.
 
-Search is only as good as your collection's tags. =g= in the now-playing buffer lists the library again at the next search.
+=g= in the now-playing buffer lists the library again at the next search.
+
+Please keep in mind that search is only as good as your collection's tags.
 
 ** Playing what you choose
 :PROPERTIES:
@@ -390,9 +396,9 @@ Not supported yet. =lyrion= connects without a user name or password, which suit
 | ~lyrion-host~                    | ="localhost"=            | the server                                                                              |
 | ~lyrion-cli-port~                | ~9090~                   | its CLI                                                                                 |
 | ~lyrion-http-port~               | ~9000~                   | its web server, for covers                                                              |
-| ~lyrion-player~                  | ~nil~                    | a player's name or id, ~local~, or ~nil~ for the one playing                             |
+| ~lyrion-player~                  | ~nil~                    | a player's name or id, ~local~, or ~nil~ for the one playing                            |
 | ~lyrion-squeezelite-program~     | ="squeezelite"=          | the program that makes this computer a player                                           |
-| ~lyrion-squeezelite-name~        | ="Emacs on HOST"=        | this computer's player's name; its address derives from it                              |
+| ~lyrion-squeezelite-name~        | ="Emacs on <hostname>"=  | this computer's player's name; its address derives from it                              |
 | ~lyrion-squeezelite-arguments~   | ~nil~                    | further arguments, such as =("-o" "pipewire")=                                          |
 | ~lyrion-squeezelite-idle-close~  | ~5~                      | seconds of silence before the sound device is released                                  |
 | ~lyrion-local-volume~            | ~nil~                    | volume set on this computer's player when it starts; see [[#this-computer][This computer]] before using 100 |
