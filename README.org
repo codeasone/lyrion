@@ -17,17 +17,17 @@ See what's playing, search your library, and control any player on the server.
 - The now-playing buffer shows the track on a /card/ centred in the window: the cover, track, artist, album and year, a progress bar, the track up next, and the player's state, including the stream's quality, such as =FLAC 24/96= or =MP3 320 kbps=.
 - Beside it, a pane shows the lyrics from =LRCLIB=. With timed lyrics, the line being sung lights up and stays in view.
 - =/= searches tracks, releases, album artists, genres, works or playlists, or all of them at once. It also searches Qobuz and plays Radio Paradise when the server has their plugins.
-- Pick a result in your completion UI to play it in order or shuffled, or to open an artist's releases.
+- In search results, =RET= plays what's chosen, =S-RET= plays it shuffled, and =M-RET= on an artist opens their releases; =ESC= backs out a step, and =M-/= goes back to your last choice. See [[#moving-through-a-search][Moving through a search]].
 - Single keys control playback, the volume, shuffle, repeat, smart crossfading, a sleep timer and the choice of player. [[#keys][Keys]] lists them all.
 - =I= inspects the queue in play order and jumps to any track in it. See [[#the-queue][The queue]].
 - =lyrion= can start =squeezelite= so this computer plays too, and the server keeps that player's settings between sessions.
 
-With =vertico=, a search lists all its results before you type anything, so you can scroll through the library as you would a browser, then narrow it by artist, year or other details. See [[#searching][Searching]].
+With =vertico=, a search shows every result before you type, so you can browse the library, then narrow it by artist, year or other details. See [[#searching][Searching]].
 
 * Design
 
 - =lyrion= is one file and needs only Emacs 30 or later, with its built-in =transient=. If =nerd-icons= is installed, it uses it for icons.
-- The server owns the queue, along with each player's shuffle, repeat and crossfade settings. Choosing something to play replaces the queue on the server, and =<= and =>= move through it there. =lyrion= never edits the queue or keeps a copy of it; inspecting it with =I= fetches it afresh each time.
+- The server owns the queue, along with each player's shuffle, repeat and crossfade settings. Choosing something to play replaces the queue on the server, and =<= and =>= move through it there. =lyrion= can ask the server to shuffle the queue, but never adds, removes or moves tracks in it itself, nor keeps a copy; inspecting it with =I= fetches it afresh each time.
 - Nothing is polled. =lyrion= keeps one connection open to the server's CLI, which despite its name is a line-based text protocol over TCP, and subscribes to the player's status. The server sends the full status whenever anything changes, and Emacs counts the elapsed time in between.
 - Covers come from the server's web port and lyrics from =LRCLIB= over TLS. Both are fetched with a few lines of HTTP/1.0 over network processes rather than =url.el=, and every request has a timeout.
 - Search lists the library once a session, on separate connections, starting in the background when the menu opens, so it never holds up the card.
@@ -353,6 +353,8 @@ When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =P
 :END:
 
 =I= inspects the queue in the order it plays, shuffled or not, whatever your completion UI would otherwise sort by.
+
+Shuffling reorders the queue on the server, which then plays it straight through in that order, so =I= always shows what comes next. Turning shuffle off with =S= puts the queue back in its original order without interrupting the track playing. Play carries on from that track's place in the original order, so any tracks before it there are passed over.
 
 - The track playing is marked ▶, and with =vertico= the cursor starts on it, so the tracks around it are a few keys away.
 - Each line shows the track's title, artist and album, and all of them match what you type, so =planet= finds any title with that word.
