@@ -356,6 +356,13 @@ is on two releases, so that it has two recordings.")
     (let ((lyrion--http-timeout 0.3))
       (should-not (lyrion-test--get "/music/1/cover.jpg")))))
 
+(ert-deftest lyrion-test/http-get-gives-up-when-it-cannot-connect ()
+  (cl-letf (((symbol-function 'open-network-stream)
+             (lambda (&rest _) (signal 'file-error '("Name or service not known")))))
+    (let ((answer 'waiting))
+      (lyrion--http-get "nowhere" 80 "/" (lambda (response) (setq answer response)))
+      (should-not answer))))
+
 (ert-deftest lyrion-test/a-cover-is-fetched-once-per-track ()
   (let ((fetched nil))
     (cl-letf (((symbol-function 'lyrion--http-get)
@@ -627,6 +634,35 @@ is on two releases, so that it has two recordings.")
       (should (lyrion-test--wait (lambda () (lyrion-test--shows "trying again"))))
       (should (timerp lyrion--retry)))))
 
+(ert-deftest lyrion-test/a-connection-that-cannot-start-is-tried-again ()
+  (lyrion-test--with-server #'lyrion-test--answer
+    (let* ((lyrion-reconnect-delay 0.2)
+           (connect (symbol-function 'make-network-process))
+           (failed nil))
+      ;; The first attempt fails at once, as an unknown host can.
+      (cl-letf (((symbol-function 'make-network-process)
+                 (lambda (&rest args)
+                   (if failed
+                       (apply connect args)
+                     (setq failed t)
+                     (signal 'file-error '("make client process failed"
+                                           "Name or service not known"))))))
+        (lyrion-test--with-player
+          (should (lyrion-test--shows "Cannot reach 127.0.0.1"))
+          (should (timerp lyrion--retry))
+          (should (lyrion-test--wait
+                   (lambda () (lyrion-test--shows "Für Alina")))))))))
+
+(ert-deftest lyrion-test/asking-for-the-players-again-replaces-a-waiting-ask ()
+  (with-temp-buffer
+    (lyrion-mode)
+    (lyrion--ask-players-later 30)
+    (let ((first lyrion--retry))
+      (lyrion--ask-players-later 30)
+      (should-not (memq first timer-list))
+      (should (memq lyrion--retry timer-list))
+      (cancel-timer lyrion--retry))))
+
 (ert-deftest lyrion-test/killing-the-buffer-closes-everything ()
   (lyrion-test--with-server #'lyrion-test--answer
     (let ((buffer (get-buffer-create lyrion-buffer-name))
@@ -820,6 +856,13 @@ is on two releases, so that it has two recordings.")
       (should (lyrion-test--wait (lambda () (not (eq answer 'waiting))) 3))
       (should-not answer))))
 
+(ert-deftest lyrion-test/query-gives-up-when-it-cannot-connect ()
+  (cl-letf (((symbol-function 'make-network-process)
+             (lambda (&rest _) (signal 'file-error '("Name or service not known")))))
+    (let ((answer 'waiting))
+      (lyrion--query '("titles") (lambda (reply) (setq answer reply)))
+      (should-not answer))))
+
 (ert-deftest lyrion-test/a-short-answer-is-waited-for-briefly ()
   "The players and the queue wait the short time, not the library's long one."
   (lyrion-test--with-server #'ignore
@@ -843,6 +886,16 @@ is on two releases, so that it has two recordings.")
       (setq timeouts nil)
       (lyrion--query-wait '("players" "0" "99"))
       (should (equal timeouts (list lyrion--quick-timeout))))))
+
+(ert-deftest lyrion-test/an-unanswered-qobuz-search-is-reported ()
+  (cl-letf (((symbol-function 'lyrion--query)
+             (lambda (words callback &optional _timeout)
+               ;; The track search is answered, the release search is not.
+               (funcall callback (and (string-search "item_id:0.0.2" (nth 5 words))
+                                      (append words '("count:0"))))))
+            ((symbol-function 'lyrion--player-id) (lambda () "02:00")))
+    (should-error (lyrion--qobuz-search "brahms" '(qobuz-release qobuz-track))
+                  :type 'user-error)))
 
 (ert-deftest lyrion-test/a-lost-connection-is-not-waited-for ()
   "With the player's connection down, nothing is sent and nothing waited for."
@@ -2105,6 +2158,16 @@ then shows it and sets its volume."
       (should (eq (lyrion-test--lookup lyrion-test--track) 'failed))
       (should (= 2 (length lyrion-test--requests))))))
 
+(ert-deftest lyrion-test/lookup-fails-when-the-search-fails ()
+  (lyrion-test--with-fresh-cache
+    (lyrion-test--with-http
+        (lambda (path)
+          (if (string-prefix-p "/api/get" path)
+              (lyrion-test--json 404 "{}")
+            (lyrion-test--json 500 "oops")))
+      (should (eq (lyrion-test--lookup lyrion-test--track) 'failed))
+      (should (= 2 (length lyrion-test--requests))))))
+
 (defmacro lyrion-test--in-lyrics (&rest body)
   "Run BODY in a fresh lyrics buffer, killed afterwards."
   (declare (indent 0))
@@ -2151,6 +2214,23 @@ then shows it and sets its volume."
     (should (string-search "Could not reach LRCLIB" (buffer-string)))
     (should-not (string-search "Eins" (buffer-string)))
     (should-not lyrion--lyrics-lines)))
+
+(ert-deftest lyrion-test/lyrics-load-says-when-nothing-plays ()
+  (lyrion-test--in-lyrics
+    (setq lyrion--lyrics-track lyrion-test--track)
+    (lyrion--lyrics-load (current-buffer) nil)
+    (should-not lyrion--lyrics-track)
+    (should (string-search "Nothing playing" (buffer-string)))))
+
+(ert-deftest lyrion-test/lyrics-load-says-when-lrclib-fails ()
+  (lyrion-test--with-fresh-cache
+    (lyrion-test--with-http (lyrion-test--json 500 "oops")
+      (lyrion-test--in-lyrics
+        (lyrion--lyrics-load (current-buffer) lyrion-test--track)
+        (should (string-search "Looking up the lyrics" (buffer-string)))
+        (should (lyrion-test--wait
+                 (lambda () (string-search "Could not reach LRCLIB"
+                                           (buffer-string)))))))))
 
 (ert-deftest lyrion-test/lyrics-text-has-the-words-alone ()
   (should (equal (lyrion--lyrics-text '((1 . "Eins") (2 . "") (3 . "  Zwei ")))

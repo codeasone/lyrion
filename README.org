@@ -131,7 +131,7 @@ If something after =squeezelite= controls the level, such as the system volume, 
 
 The player joins the server's list when it connects. Its name is ~lyrion-squeezelite-name~, ="Emacs on HOST"= by default. Its address derives from the name, so the server keeps its settings, such as volume and ReplayGain, between sessions. A new name makes a new player.
 
-If the no-playing card stays on "Waiting for NAME to connect", check that this computer can reach port 3483 on the server. If it connects but plays no sound, check port 9000. =squeezelite='s own output can be inspected in the =*lyrion squeezelite*= buffer.
+If the now-playing card stays on "Waiting for NAME to connect", check that this computer can reach port 3483 on the server. If it connects but plays no sound, check port 9000. =squeezelite='s own output can be inspected in the =*lyrion squeezelite*= buffer.
 
 =squeezelite= keeps running after the now-playing buffer is closed, so the music doesn't stop. =M-x lyrion-local-player-stop= stops it, as does killing =*lyrion squeezelite*= or quitting Emacs. If a =squeezelite= with this computer's address is already running, =lyrion= uses it rather than starting another.
 
@@ -387,6 +387,8 @@ If it serves no other purpose than to inspire remixes of your own, that's reason
 
 =make test= runs the test suite. =make lint= byte-compiles with warnings as errors and runs =checkdoc=.
 
-Both run Emacs headless, with no display or input. The tests talk to a fake server on loopback ports, so you don't need a real =LMS=. On every push and pull request, GitHub Actions runs both on Emacs 30.1.
+=make coverage= runs the tests under [[https://github.com/undercover-el/undercover.el][undercover]], which it installs into =.deps= the first time, and writes an lcov report to =coverage/lcov.info=. It fails when the tests run less than =COVERAGE_MIN= per cent of =lyrion.el=, 90 by default.
+
+These targets run Emacs headless, with no display or input. The tests talk to a fake server on loopback ports, so you don't need a real =LMS=. On every push and pull request, GitHub Actions runs =make lint= and =make coverage= on Emacs 30.1, and keeps the lcov report with the run.
 
 The sequence diagrams are drawn from =images/ports.mmd=, =images/qobuz.mmd= and =images/radio-paradise.mmd=. After changing one, render it again with =mmdc -i images/NAME.mmd -o images/NAME.png -b white -s 2=.
