@@ -1265,6 +1265,23 @@ by length unless told not to."
              (vertico--candidates ,candidates))
          ,@body))))
 
+(ert-deftest lyrion-test/a-fitted-result-keeps-its-group ()
+  "Vertico asks for the group of a result as shown, shortened or not."
+  (lyrion-test--with-fresh-library
+    (lyrion-test--with-server #'lyrion-test--answer
+      (lyrion-test--choosing "Alina"
+        (lyrion--read-item '(release track) "Search"))
+      (let* ((metadata (cdr (funcall lyrion-test--table "" nil 'metadata)))
+             (affix (alist-get 'affixation-function metadata))
+             (group (alist-get 'group-function metadata))
+             (texts (all-completions "" lyrion-test--table))
+             (track (car (last texts))))
+        (lyrion-test--in-vertico 12 -1 texts
+          (let ((shown (car (car (funcall affix (list track))))))
+            (should (string-suffix-p "…" shown))
+            (should (equal (funcall group shown nil) "Tracks"))
+            (should (eq (funcall group shown t) shown))))))))
+
 (ert-deftest lyrion-test/fit-to-window-scrolls-only-the-selected-result ()
   (let* ((short (lyrion--with-detail "Clair" nil))
          (texts (list lyrion-test--clair short

@@ -334,7 +334,7 @@ Not supported yet. =lyrion= connects without a user name or password, which suit
 | ~lyrion-reconnect-delay~         | ~5~                      | seconds to wait before reconnecting after a drop                                        |
 | ~lyrion-lyrics-url~              | ~https://lrclib.net/api~ | where the lyrics come from                                                              |
 | ~lyrion-lyrics-side~             | ~right~                  | the side the lyrics open on                                                             |
-| ~lyrion-lyrics-size~             | ~0.33~                   | their share of the frame                                                                |
+| ~lyrion-lyrics-size~             | ~0.4~                    | their share of the frame                                                                |
 | ~lyrion-lyrics-select-window~    | ~t~                      | move point into the lyrics when they open                                               |
 | ~lyrion-lyrics-hide-empty-lines~ | ~t~                      | leave out lines with no words                                                           |
 | ~lyrion-qobuz-results~           | ~100~                    | the most Qobuz results shown of each kind                                               |

@@ -135,7 +135,7 @@ Showing the lyrics sends the track's artist, title, album and length there."
   "Side of the frame the lyrics open on."
   :type '(choice (const right) (const left) (const bottom) (const top)))
 
-(defcustom lyrion-lyrics-size 0.33
+(defcustom lyrion-lyrics-size 0.4
   "Share of the frame the lyrics take: their width at the sides."
   :type 'number)
 
@@ -1486,11 +1486,16 @@ OFFSET the column it was last shown from.")
 (defvar vertico--index)
 (defvar vertico--candidates)
 
+(defun lyrion--result (text)
+  "Return the result behind TEXT, which may be fitted to the window."
+  (or (get-text-property 0 'lyrion-result text) text))
+
 (defun lyrion--fit-to-window (affixed)
   "Fit AFFIXED, the results an affixation function gives, to the window.
 That needs Vertico, which shows them as returned; other completion
 interfaces, which may take them for what is chosen, get them unchanged.
-The selected result scrolls instead, when `lyrion-search-scroll' says so."
+The selected result scrolls instead, when `lyrion-search-scroll' says so.
+Each fitted text keeps its result, for `lyrion--result'."
   (if (not (and (bound-and-true-p vertico--input)
                 (fboundp 'vertico--window-width)))
       affixed
@@ -1516,7 +1521,9 @@ The selected result scrolls instead, when `lyrion-search-scroll' says so."
                                                        span)
                          scroll (list (substring-no-properties text)
                                       since span offset))))
-               (list (lyrion--fit text width offset) prefix suffix)))
+               (list (propertize (lyrion--fit text width offset)
+                                 'lyrion-result text)
+                     prefix suffix)))
            affixed)
         (setq lyrion--scroll scroll)))))
 
@@ -1694,11 +1701,13 @@ artists among KINDS."
                            candidates))))
          ;; The recent choices among the results last sorted.
          (recent nil)
+         ;; Vertico asks with the text as shown, which may be fitted.
          (group (lambda (candidate transform)
-                  (cond (transform candidate)
-                        ((member candidate recent) "Recent")
-                        (t (nth 1 (assq (car (funcall lookup candidate))
-                                        lyrion--kinds))))))
+                  (let ((result (lyrion--result candidate)))
+                    (cond (transform candidate)
+                          ((member result recent) "Recent")
+                          (t (nth 1 (assq (car (funcall lookup result))
+                                          lyrion--kinds)))))))
          ;; Recent choices first, then the alphabet; groups come in the order
          ;; of KINDS, each sorted so within.
          (sort (lambda (candidates)
