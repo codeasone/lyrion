@@ -224,7 +224,7 @@ way. Both need Vertico."
   "Face of the icon of anything from Qobuz among search results.")
 
 (defconst lyrion-buffer-name "*lyrion*"
-  "Name of the buffer that shows the player.")
+  "Name of the now-playing buffer.")
 
 (defconst lyrion--transition-prefs
   '("transitionType" "transitionSmart" "transitionDuration")
@@ -247,7 +247,7 @@ number, disc and number of discs.")
           (package-get-version))
   "How lyrion names itself to web servers; LRCLIB asks clients to say.")
 
-;;; State, local to the player's buffer
+;;; State, local to the now-playing buffer
 
 (defvar-local lyrion--process nil
   "Connection to the server's command-line interface.")
@@ -293,7 +293,7 @@ It takes the place of `lyrion-player' for as long as the buffer lives.")
 
 (defvar lyrion--squeezelite nil
   "The squeezelite process lyrion started, or nil.
-It outlives the player's buffer, so closing lyrion does not stop the music.")
+It outlives the now-playing buffer, so closing lyrion does not stop the music.")
 
 (defvar lyrion--local-wait 10
   "Seconds to wait for a squeezelite just started to connect to the server.")
@@ -675,7 +675,7 @@ with the key that skips to it."
                                'face 'lyrion-next-key)))))
 
 (defun lyrion--render ()
-  "Draw the player's buffer from its state."
+  "Draw the now-playing buffer from its state."
   (let ((inhibit-read-only t)
         (status lyrion--status)
         (title (or (lyrion--get lyrion--status "title")
@@ -2090,7 +2090,7 @@ Timed lyrics light the line being sung and keep it in view.
     (pop-to-buffer-same-window buffer)))
 
 (defun lyrion--player-buffer ()
-  "Return the player's buffer, or signal that lyrion is not open."
+  "Return the now-playing buffer, or signal that lyrion is not open."
   (or (get-buffer lyrion-buffer-name)
       (user-error "Lyrion is not open")))
 
@@ -2619,7 +2619,7 @@ staying as it was; choosing the one playing starts it again."
        (list "playlist" "index" (number-to-string position))))))
 
 (defun lyrion--shown (variable)
-  "Return VARIABLE's value in the player's buffer, or nil without one."
+  "Return VARIABLE's value in the now-playing buffer, or nil without one."
   (when-let* ((buffer (get-buffer lyrion-buffer-name)))
     (buffer-local-value variable buffer)))
 
@@ -2658,7 +2658,7 @@ staying as it was; choosing the one playing starts it again."
       "Crossfade")))
 
 (transient-define-prefix lyrion-dispatch ()
-  "Show every key of the player and the lyrics, and run the one pressed.
+  "Show every key of the now-playing and lyrics buffers; run the one pressed.
 The labels give the player's repeat mode and crossfade setting. Moving
 through the queue and the track keeps the menu open; other keys close it."
   [["Playback"
