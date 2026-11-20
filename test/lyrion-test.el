@@ -983,7 +983,10 @@ is on two releases, so that it has two recordings.")
       (should (string-search (car suffix) layout))
       (should (string-search (symbol-name (cadr suffix)) layout))))
   (should (eq (lookup-key lyrion-mode-map (kbd "/")) #'lyrion-search))
-  (should (eq (lookup-key lyrion-lyrics-mode-map (kbd "/")) #'lyrion-search)))
+  (should (eq (lookup-key lyrion-lyrics-mode-map (kbd "/")) #'lyrion-search))
+  (should (eq (lookup-key lyrion-mode-map (kbd "P")) #'lyrion-radio-paradise))
+  (should (eq (lookup-key lyrion-lyrics-mode-map (kbd "P"))
+              #'lyrion-radio-paradise)))
 
 (ert-deftest lyrion-test/search-menu-keeps-playback-keys ()
   "Playback keys work in the search menu, and keep it open."
@@ -1548,7 +1551,6 @@ connections of their own, and the commands sent for the player."
     (should (eq (lookup-key map (kbd "S-<return>")) #'lyrion-shuffle))
     (should (eq (lookup-key map (kbd "S")) #'lyrion-shuffle-toggle))
     (should (eq (lookup-key map (kbd "O")) #'lyrion-play-in-order))
-    (should-not (lookup-key map (kbd "P")))
     (should (eq (lookup-key map (kbd "R")) #'lyrion-repeat))))
 
 (ert-deftest lyrion-test/shuffle-starts-a-new-order-from-the-top ()
@@ -2900,6 +2902,19 @@ Return the commands sent for the player and the texts offered first."
       (should (lyrion--qobuz-p))
       (should-not (lyrion--radio-paradise-p))
       (should (assoc "radioparadise" lyrion--plugins-found)))))
+
+(ert-deftest lyrion-test/radio-paradise-needs-its-plugin ()
+  "P from the player says so when the server has no Radio Paradise."
+  (let ((lyrion--plugins-found nil))
+    (lyrion-test--with-server
+        (lambda (words)
+          (when (equal (car words) "can")
+            (lyrion--encode (append (butlast words) '("0")))))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) (error "Offered channels"))))
+        (should (string-search "no Radio Paradise plugin"
+                               (cadr (should-error (lyrion-radio-paradise)
+                                                   :type 'user-error))))))))
 
 (ert-deftest lyrion-test/plugins-are-asked-before-the-library-is-listed ()
   "The server answers one request at a time, so the plugins go first: behind

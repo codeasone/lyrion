@@ -155,6 +155,7 @@ In the now-playing and lyrics buffers:
 | =X=     | turn smart crossfading on or off                                    |
 | =I=     | inspect the queue and jump to a track                               |
 | =/=     | open the search menu                                                |
+| =P=     | choose a Radio Paradise channel, as =/= =P= does                    |
 | =p=     | choose the player                                                   |
 | =w=     | copy the track as "Artist - Release - Title"                        |
 | =Z=     | sleep in 15 to 90 minutes, fading out, or cancel it                 |
@@ -289,7 +290,7 @@ These settings suit =lyrion=. Leave the others at their defaults.
 
 * Radio Paradise
 
-When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =P= in the search menu lists its channels, such as Main Mix and Mellow Mix. The channel you choose replaces the queue and plays in FLAC, the best of its streams, which also allows skipping songs.
+When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =P=, in the search menu or straight from the player or the lyrics, lists its channels, such as Main Mix and Mellow Mix. The channel you choose replaces the queue and plays in FLAC, the best of its streams, which also allows skipping songs.
 
 #+attr_html: :width 900px
 #+attr_org: :width 900

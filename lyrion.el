@@ -2014,6 +2014,9 @@ Interactive\"; the name runs to the first \" - \", leaving out the format."
 A channel with several streams plays its first, the plugin's best: FLAC,
 which lets the server skip songs."
   (interactive)
+  (lyrion--check-plugins)
+  (unless (lyrion--radio-paradise-p)
+    (lyrion--user-error "%s has no Radio Paradise plugin" lyrion-host))
   (let* ((channels (lyrion--plugin-items "radioparadise"))
          (name (lyrion--read-in-order
                 "Radio Paradise channel: "
@@ -2213,6 +2216,7 @@ QOBUZ non-nil means the kinds from Qobuz, otherwise from the library."
   "R" #'lyrion-repeat
   "X" #'lyrion-crossfade
   "/" #'lyrion-search
+  "P" #'lyrion-radio-paradise
   "L" #'lyrion-lyrics
   "C" #'lyrion-lyrics-copy
   "w" #'lyrion-copy-track
@@ -2995,7 +2999,9 @@ through the queue and the track keeps the menu open; other keys close it."
     ("X" lyrion-crossfade :description lyrion--crossfade-description)
     ("I" "Inspect the queue" lyrion-queue)]
    ["Library"
-    ("/" "Search..." lyrion-search)]]
+    ("/" "Search..." lyrion-search)
+    ("P" "Radio Paradise..." lyrion-radio-paradise
+     :if lyrion--radio-paradise-p)]]
   ;; A second row, so the menu fits a frame of about 80 columns.
   [["Player"
     ("p" "Choose the player" lyrion-select-player)
