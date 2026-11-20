@@ -237,10 +237,19 @@ order. 0 leaves every result in alphabetical order."
   '("transitionType" "transitionSmart" "transitionDuration")
   "The player preferences that make up its crossfade setting.")
 
-(defconst lyrion--status-tags "tags:alcdyKtiq"
+(defconst lyrion--status-tags "tags:alcdyKtiqoIrTu"
   "The track's fields asked for in its status.
 They are the artist, album, cover, duration, year, artwork URL, track
-number, disc and number of discs.")
+number, disc, number of discs, the stream's format, bit depth, bitrate
+and sample rate, and the track's URL.")
+
+(defconst lyrion--formats
+  '(("flc" "FLAC" t) ("alc" "ALAC" t) ("wav" "WAV" t) ("aif" "AIFF" t)
+    ("wvp" "WavPack" t) ("ape" "APE" t) ("wmal" "WMA Lossless" t)
+    ("dsf" "DSD" t) ("dff" "DSD" t)
+    ("mp3" "MP3" nil) ("aac" "AAC" nil) ("mp4" "AAC" nil)
+    ("ogg" "Vorbis" nil) ("ops" "Opus" nil) ("wma" "WMA" nil))
+  "Formats the server names by code, as (CODE NAME LOSSLESS).")
 
 (defconst lyrion--cover-pixels 1600
   "Side of the square the server scales a cover to before sending it.")
@@ -427,8 +436,11 @@ Fields before the first KEY, such as the echoed command, are left out."
 (defun lyrion--next-track (status)
   "Return the track after the one playing in STATUS, as an alist, or nil.
 The status lists the tracks from the one playing, each starting at its
-`playlist index'. Repeating the track, nothing comes next but itself."
-  (unless (equal (lyrion--get status "playlist repeat") "1")
+`playlist index'. Repeating the track, nothing comes next but itself.
+Radio Paradise's queue is the channel alone, so nothing comes next there
+either: repeating, the status would give the song playing again."
+  (unless (or (equal (lyrion--get status "playlist repeat") "1")
+              (lyrion--radio-p status))
     (let ((tracks nil))
       (dolist (field status)
         (cond ((equal (car field) "playlist index") (push (list field) tracks))
@@ -619,40 +631,111 @@ It is a clock time such as 23:45, which needs no counting down."
   (when-let* ((left (lyrion--number (lyrion--get status "will_sleep_in"))))
     (format-time-string "%H:%M" (+ (or time (float-time)) left))))
 
-(defun lyrion--player-text ()
-  "Return the player's name, and its state when it is not playing."
-  (let ((status lyrion--status))
-    (propertize
-     (concat (or (lyrion--get status "player_name")
-                 (lyrion--get lyrion--player "name")
-                 "")
-             (pcase (lyrion--get status "mode")
-               ("play" "")
-               ("pause" " · paused")
-               (_ " · stopped"))
-             ;; Shuffling by album, set elsewhere, is shown as shuffle too.
-             (if (member (lyrion--get status "playlist shuffle") '("1" "2"))
-                 " · shuffle"
+(defun lyrion--quality (status)
+  "Return the quality of the stream in STATUS, such as FLAC 16/44.1, or nil.
+A lossless stream gives its bit depth and sample rate, in kHz; a lossy
+one its bitrate, as the server measures it. DSD is named by its rate, as
+in DSD64."
+  (when-let* ((code (lyrion--get status "type")))
+    (pcase-let* ((`(,name ,lossless) (or (cdr (assoc code lyrion--formats))
+                                         (list (upcase code) nil)))
+                 (bits (lyrion--get status "samplesize"))
+                 (rate (lyrion--number (lyrion--get status "samplerate")))
+                 (bitrate (lyrion--get status "bitrate")))
+      (cond
+       ((and (equal name "DSD") rate (> rate 0))
+        (format "DSD%d" (round rate 44100)))
+       ((and lossless rate (> rate 0))
+        (let ((khz (string-remove-suffix
+                    ".0" (format "%.1f" (/ rate 1000.0)))))
+          (if (and bits (not (equal bits "0")))
+              (format "%s %s/%s" name bits khz)
+            (format "%s %s kHz" name khz))))
+       ((and (not lossless) bitrate
+             (string-match "\\`\\([0-9]+\\)" bitrate))
+        (format "%s %s kbps" name (match-string 1 bitrate)))
+       (t name)))))
+
+(defun lyrion--radio-p (status)
+  "Return non-nil when the player in STATUS plays Radio Paradise.
+The channel streams one song after another, so its queue has no order to
+shuffle or repeat."
+  (string-prefix-p "radioparadise://" (or (lyrion--get status "url") "")))
+
+(defun lyrion--radio-shown-p ()
+  "Return non-nil when the player shown plays Radio Paradise."
+  (lyrion--radio-p (lyrion--shown 'lyrion--status)))
+
+(defun lyrion--check-queue-order ()
+  "Signal an error when the player shown plays Radio Paradise.
+For the commands that shuffle, repeat or reorder the queue."
+  (when (lyrion--radio-shown-p)
+    (user-error "Radio Paradise has no shuffle or repeat")))
+
+(defun lyrion--player-parts ()
+  "Return the parts of the player line, as strings, in order.
+They are the player's name, the stream's quality, and the player's state."
+  (let* ((status lyrion--status)
+         (radio (lyrion--radio-p status))
+         (transition (lyrion--transition-name lyrion--transition))
+         (seconds (lyrion--get lyrion--transition "transitionDuration")))
+    (delq nil
+          (list
+           (or (lyrion--get status "player_name")
+               (lyrion--get lyrion--player "name")
                "")
-             (let ((name (lyrion--transition-name lyrion--transition))
-                   (seconds (lyrion--get lyrion--transition
-                                         "transitionDuration")))
-               ;; Shown once its length is known too, to avoid a flicker.
-               (if (or (member name '(nil "off")) (not seconds))
-                   ""
-                 (concat " · " name
-                         (if (equal seconds "0") "" (format " %s s" seconds)))))
-             (pcase (lyrion--get status "playlist repeat")
-               ("1" " · repeat track")
-               ("2" " · repeat all")
-               (_ ""))
-             (if-let* ((time (lyrion--sleep-time status lyrion--status-time)))
-                 (concat " · sleeps at " time)
-               "")
-             (if (equal (lyrion--get status "player_connected") "0")
-                 " · not connected"
-               ""))
-     'face 'lyrion-player)))
+           (lyrion--quality status)
+           (pcase (lyrion--get status "mode")
+             ("play" nil)
+             ("pause" "paused")
+             (_ "stopped"))
+           ;; Shuffling by album, set elsewhere, is shown as shuffle too.
+           ;; Radio Paradise has neither shuffle nor repeat to show.
+           (and (not radio)
+                (member (lyrion--get status "playlist shuffle") '("1" "2"))
+                "shuffle")
+           ;; Shown once its length is known too, to avoid a flicker. The
+           ;; server never makes a smart transition from a queue of one, as
+           ;; Radio Paradise's is, so then it is not shown.
+           (unless (or (member transition '(nil "off")) (not seconds)
+                       (and radio
+                            (equal (lyrion--get lyrion--transition
+                                                "transitionSmart")
+                                   "1")))
+             (concat transition
+                     (if (equal seconds "0") "" (format " %s s" seconds))))
+           (pcase (and (not radio) (lyrion--get status "playlist repeat"))
+             ("1" "repeat track")
+             ("2" "repeat all"))
+           (when-let* ((time (lyrion--sleep-time status lyrion--status-time)))
+             (concat "sleeps at " time))
+           (and (equal (lyrion--get status "player_connected") "0")
+                "not connected")))))
+
+(defun lyrion--fill-parts (parts width)
+  "Return PARTS joined by dots into lines no wider than WIDTH pixels.
+Lines break only between parts, so a part too wide has a line to itself.
+WIDTH nil puts them all on one line."
+  (let ((lines nil))
+    (dolist (part parts)
+      (let ((joined (and lines (concat (car lines) " · " part))))
+        (if (and joined (or (not width) (<= (string-pixel-width joined) width)))
+            (setcar lines joined)
+          (push part lines))))
+    (nreverse lines)))
+
+(defun lyrion--card-width ()
+  "Return the pixels a line of the card may take, or nil when not shown.
+A column is left free at each side."
+  (when-let* ((window (get-buffer-window (current-buffer) t)))
+    (- (window-body-width window t) (* 2 (frame-char-width)))))
+
+(defun lyrion--player-lines ()
+  "Return the player line as centred lines that fit the window."
+  (mapconcat (lambda (line)
+               (lyrion--centre (propertize line 'face 'lyrion-player)))
+             (lyrion--fill-parts (lyrion--player-parts) (lyrion--card-width))
+             ""))
 
 (defun lyrion--track-number (status)
   "Return the number of the track in STATUS on its release, or nil.
@@ -695,7 +778,7 @@ with the key that skips to it."
      ((not title)
       (insert (lyrion--centre (propertize "Nothing playing"
                                           'face 'lyrion-album))
-              "\n" (lyrion--centre (lyrion--player-text))))
+              "\n" (lyrion--player-lines)))
      (t
       (when-let* ((image (cdr lyrion--cover)))
         (insert (lyrion--centre (propertize " " 'display image)) "\n"))
@@ -715,7 +798,7 @@ with the key that skips to it."
         (unless (string-empty-p line)
           (insert (lyrion--centre (propertize line 'face 'lyrion-album)))))
       (insert "\n" (lyrion--progress-line)
-              "\n" (lyrion--centre (lyrion--player-text)))
+              "\n" (lyrion--player-lines))
       ;; Up next, a line apart from the player's state.
       (when-let* ((next (lyrion--next-text status)))
         (insert "\n" (lyrion--centre next)))))
@@ -2074,6 +2157,12 @@ The player's keys, but for \\`q', which hides the lyrics alone."
   :parent lyrion-mode-map
   "q" #'quit-window)
 
+(defun lyrion--refit (window)
+  "Draw WINDOW's now-playing buffer again, to fit its new width."
+  (with-current-buffer (window-buffer window)
+    (when (derived-mode-p 'lyrion-mode)
+      (lyrion--render))))
+
 (define-derived-mode lyrion-mode special-mode "Now Playing"
   "Show what a Lyrion Music Server player is playing.
 \\<lyrion-mode-map>\\[lyrion-play-pause] plays or pauses.
@@ -2098,6 +2187,9 @@ library anew."
               revert-buffer-function (lambda (&rest _) (lyrion-reconnect)))
   (buffer-disable-undo)
   (add-hook 'kill-buffer-hook #'lyrion--close nil t)
+  ;; The player line breaks to fit the window, so a new width redraws it.
+  (add-hook 'window-size-change-functions #'lyrion--refit nil t)
+  (add-hook 'window-buffer-change-functions #'lyrion--refit nil t)
   (setq lyrion--timer (run-with-timer 1 1 #'lyrion--tick (current-buffer))))
 
 (define-derived-mode lyrion-lyrics-mode special-mode "Lyrics"
@@ -2292,6 +2384,7 @@ to the second, the first the shuffle picked, and the queue is shuffled
 again around that one: it then plays first, with the track left behind
 somewhere among the rest. Paused or stopped, the player starts playing."
   (interactive)
+  (lyrion--check-queue-order)
   (lyrion--player-command '("playlist" "shuffle" "1"))
   (lyrion--player-command '("playlist" "index" "1"))
   (lyrion--player-command '("playlist" "shuffle" "1")))
@@ -2299,6 +2392,7 @@ somewhere among the rest. Paused or stopped, the player starts playing."
 (defun lyrion-play-in-order ()
   "Turn shuffle off and play the player's queue from its first track."
   (interactive)
+  (lyrion--check-queue-order)
   (lyrion--player-command '("playlist" "shuffle" "0"))
   (lyrion--player-command '("playlist" "index" "0")))
 
@@ -2307,6 +2401,7 @@ somewhere among the rest. Paused or stopped, the player starts playing."
 On, the server shuffles the queue around the track playing; off, it puts
 the queue back in order. Either way the music carries on."
   (interactive)
+  (lyrion--check-queue-order)
   (lyrion--player-command
    (lambda (status)
      (list "playlist" "shuffle"
@@ -2317,6 +2412,7 @@ the queue back in order. Either way the music carries on."
 (defun lyrion-repeat ()
   "Change the player's repeat mode: off, then the track, then all of the queue."
   (interactive)
+  (lyrion--check-queue-order)
   (lyrion--player-command
    (lambda (status)
      (let ((mode (or (lyrion--number (lyrion--get status "playlist repeat")) 0)))
@@ -2777,10 +2873,15 @@ through the queue and the track keeps the menu open; other keys close it."
     ;; `+' without shift: bound, but drawn as nothing, last in the column.
     ("=" lyrion-volume-up :transient t :format "")]
    ["Queue"
-    ("S" lyrion-shuffle-toggle :description lyrion--shuffle-description)
-    ("S-<return>" "Shuffle afresh" lyrion-shuffle)
-    ("O" "Play in order, from the top" lyrion-play-in-order)
-    ("R" lyrion-repeat :description lyrion--repeat-description)
+    ;; Radio Paradise has no order to change: these show, but do nothing.
+    ("S" lyrion-shuffle-toggle :description lyrion--shuffle-description
+     :inapt-if lyrion--radio-shown-p)
+    ("S-<return>" "Shuffle afresh" lyrion-shuffle
+     :inapt-if lyrion--radio-shown-p)
+    ("O" "Play in order, from the top" lyrion-play-in-order
+     :inapt-if lyrion--radio-shown-p)
+    ("R" lyrion-repeat :description lyrion--repeat-description
+     :inapt-if lyrion--radio-shown-p)
     ("X" lyrion-crossfade :description lyrion--crossfade-description)
     ("I" "Inspect the queue" lyrion-queue)]
    ["Library"

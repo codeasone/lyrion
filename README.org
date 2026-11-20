@@ -14,7 +14,7 @@ See what's playing, search your library, and control any player on the server.
 
 * What it does
 
-- The now-playing buffer shows the track on a /card/ centred in the window: the cover, track, artist, album and year, a progress bar, the track up next, and the player's state.
+- The now-playing buffer shows the track on a /card/ centred in the window: the cover, track, artist, album and year, a progress bar, the track up next, and the player's state, including the stream's quality, such as =FLAC 24/96= or =MP3 320 kbps=.
 - Beside it, a pane shows the lyrics from =LRCLIB=. With timed lyrics, the line being sung lights up and stays in view.
 - =/= searches tracks, releases, album artists, genres, works or playlists, or all of them at once. It also searches Qobuz and plays Radio Paradise when the server has their plugins.
 - Pick a result in your completion UI to play it in order or shuffled, or to open an artist's releases.
@@ -284,7 +284,7 @@ When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =P
 #+attr_org: :width 900
 [[file:images/radio-paradise-channels.png]]
 
-=LMS= relays the stream one song at a time, each with its own title and cover, so the card follows the songs as the channel plays.
+=LMS= relays the stream one song at a time, each with its own title and cover, so the card follows the songs as the channel plays. A channel has no order to change, so the card leaves out shuffle, repeat and the track up next, and the =?= menu greys out their keys. The server makes no smart crossfade in a queue of one, which a channel is, so the card leaves that out too; Radio Paradise blends its songs itself anyway.
 
 #+attr_html: :width 762px
 #+attr_org: :width 762

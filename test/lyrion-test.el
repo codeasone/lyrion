@@ -126,7 +126,7 @@ The local player has lost its connection but still claims to be playing."
 
 (defun lyrion-test--status-line (player &rest fields)
   "Return a status line for PLAYER with FIELDS, strings of the form KEY:VALUE."
-  (lyrion--encode (append (list player "status" "-" "2" "tags:alcdyKtiq"
+  (lyrion--encode (append (list player "status" "-" "2" "tags:alcdyKtiqoIrTu"
                                 "subscribe:0" "player_name:WiiM Ultra"
                                 "player_connected:1")
                           fields)))
@@ -214,7 +214,7 @@ is on two releases, so that it has two recordings.")
                  '("title:Für Alina" "artist:Arvo Pärt"))))
 
 (ert-deftest lyrion-test/encode-round-trips ()
-  (let ((words '("02:00:00:00:00:01" "status" "-" "2" "tags:alcdyKtiq"
+  (let ((words '("02:00:00:00:00:01" "status" "-" "2" "tags:alcdyKtiqoIrTu"
                  "title:Für Alina")))
     (should (string-suffix-p "\n" (lyrion--encode words)))
     (should-not (string-search " " (car (split-string (lyrion--encode words)))))
@@ -560,7 +560,7 @@ is on two releases, so that it has two recordings.")
       (should (lyrion-test--shows "WiiM Ultra"))
       (should (equal lyrion-test--received
                      '(("players" "0" "99")
-                       ("02:00:00:00:00:01" "status" "-" "2" "tags:alcdyKtiq"
+                       ("02:00:00:00:00:01" "status" "-" "2" "tags:alcdyKtiqoIrTu"
                         "subscribe:0")))))))
 
 (ert-deftest lyrion-test/a-pushed-status-updates-the-player ()
@@ -1965,6 +1965,120 @@ the candidates, and only then."
          "02:00:00:00:00:01 prefset server transitionType 0\n")
         (should (lyrion-test--wait
                  (lambda () (not (lyrion-test--shows "crossfade")))))))))
+
+(ert-deftest lyrion-test/quality-of-the-stream ()
+  (dolist (case '(((("type" . "flc") ("samplesize" . "16")
+                    ("samplerate" . "44100") ("bitrate" . "850kbps"))
+                   . "FLAC 16/44.1")
+                  ((("type" . "flc") ("samplesize" . "24")
+                    ("samplerate" . "96000"))
+                   . "FLAC 24/96")
+                  ((("type" . "alc") ("samplerate" . "48000"))
+                   . "ALAC 48 kHz")
+                  ((("type" . "mp3") ("samplerate" . "44100")
+                    ("bitrate" . "320kbps CBR"))
+                   . "MP3 320 kbps")
+                  ((("type" . "ogg")) . "Vorbis")
+                  ((("type" . "dsf") ("samplesize" . "1")
+                    ("samplerate" . "2822400"))
+                   . "DSD64")
+                  ((("type" . "xyz")) . "XYZ")
+                  (nil . nil)))
+    (should (equal (lyrion--quality (car case)) (cdr case)))))
+
+(ert-deftest lyrion-test/render-states-the-quality ()
+  (with-temp-buffer
+    (setq lyrion--status '(("player_name" . "WiiM Ultra") ("mode" . "pause")
+                           ("title" . "Für Alina") ("type" . "flc")
+                           ("samplesize" . "24") ("samplerate" . "96000")))
+    (lyrion--render)
+    (should (string-search "WiiM Ultra · FLAC 24/96 · paused"
+                           (buffer-string)))))
+
+(ert-deftest lyrion-test/radio-paradise-has-no-shuffle-or-repeat ()
+  "On Radio Paradise, the player line leaves shuffle and repeat out, and
+the keys that would change them say why they do nothing."
+  (let ((buffer (get-buffer-create lyrion-buffer-name))
+        (sent nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'lyrion--player-command)
+                   (lambda (command) (push command sent))))
+          (with-current-buffer buffer
+            (setq-local lyrion--status
+                        '(("player_name" . "WiiM Ultra") ("mode" . "play")
+                          ("title" . "Old Time Revival")
+                          ("playlist shuffle" . "1") ("playlist repeat" . "2")
+                          ("url" . "radioparadise://4-945.flac")))
+            ;; The server makes no smart transition from a queue of one;
+            ;; a plain crossfade it does make.
+            (setq-local lyrion--transition '(("transitionType" . "1")
+                                             ("transitionSmart" . "1")
+                                             ("transitionDuration" . "10")))
+            (lyrion--render)
+            (should (string-search "WiiM Ultra\n" (buffer-string)))
+            (setf (alist-get "transitionSmart" lyrion--transition nil nil
+                             #'equal)
+                  "0")
+            (lyrion--render)
+            (should (string-search "WiiM Ultra · crossfade 10 s\n"
+                                   (buffer-string)))
+            (should (lyrion--radio-shown-p))
+            ;; Its queue is the channel alone: nothing is up next, though
+            ;; repeating, the status gives the song playing again.
+            (setq-local lyrion--status
+                        (append lyrion--status
+                                '(("playlist index" . "0")
+                                  ("title" . "Old Time Revival")
+                                  ("playlist index" . "0")
+                                  ("title" . "Old Time Revival"))))
+            (lyrion--render)
+            (should-not (string-search "Up next" (buffer-string)))
+            (dolist (command '(lyrion-shuffle-toggle lyrion-shuffle
+                               lyrion-repeat lyrion-play-in-order))
+              (should-error (funcall command) :type 'user-error))
+            (should-not sent)
+            ;; Any other stream has them as usual.
+            (setf (alist-get "url" lyrion--status nil nil #'equal)
+                  "file:///music/alina.flac")
+            (lyrion--render)
+            (should (string-search "WiiM Ultra · shuffle · crossfade 10 s · repeat all"
+                                   (buffer-string)))
+            (should-not (lyrion--radio-shown-p))
+            (lyrion-repeat)
+            (should sent)))
+      (kill-buffer buffer))))
+
+(ert-deftest lyrion-test/fill-parts-breaks-between-parts ()
+  (cl-letf (((symbol-function 'string-pixel-width)
+             (lambda (string &rest _) (* 10 (length string)))))
+    (let ((parts '("Emacs on mark-tp" "MP3 197 kbps" "smart crossfade 10 s"
+                   "repeat all")))
+      ;; Ten pixels a character: 40 characters to a line.
+      (should (equal (lyrion--fill-parts parts 400)
+                     '("Emacs on mark-tp · MP3 197 kbps"
+                       "smart crossfade 10 s · repeat all")))
+      (should (equal (lyrion--fill-parts parts 1000)
+                     '("Emacs on mark-tp · MP3 197 kbps · smart crossfade 10 s · repeat all")))
+      (should (equal (lyrion--fill-parts parts nil)
+                     (lyrion--fill-parts parts 1000)))
+      ;; A part too wide has a line to itself.
+      (should (equal (lyrion--fill-parts parts 50)
+                     parts)))
+    (should-not (lyrion--fill-parts nil 400))))
+
+(ert-deftest lyrion-test/a-new-width-draws-the-card-again ()
+  (let ((drawn 0))
+    (cl-letf (((symbol-function 'lyrion--render)
+               (lambda () (setq drawn (1+ drawn)))))
+      (with-temp-buffer
+        (lyrion-mode)
+        (should (memq #'lyrion--refit window-size-change-functions))
+        (should (memq #'lyrion--refit window-buffer-change-functions))
+        (cl-letf (((symbol-function 'window-buffer)
+                   (lambda (&rest _) (current-buffer))))
+          (lyrion--refit 'a-window))
+        (should (= drawn 1))
+        (cancel-timer lyrion--timer)))))
 
 (ert-deftest lyrion-test/render-states-crossfade ()
   (with-temp-buffer
