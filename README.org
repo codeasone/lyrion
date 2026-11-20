@@ -173,6 +173,8 @@ In the now-playing and lyrics buffers:
 
 =q= and =P= appear only when the server has the Qobuz or Radio Paradise plugin. The playback keys work in the menu too and keep it open, as does =L= for the lyrics.
 
+=ESC= backs out of a search one step at a time, and =C-g= leaves it at once; see [[#backing-out][Backing out]].
+
 Above the searches, switches choose the categories that an /Everything/ search (=/=) and a Qobuz search (=q=) include. Each shows as its key and name, lit when on and dimmed when off. All are on at first; press a switch's key to turn it off or on again. Keys that search one category, such as =t= for tracks, ignore the switches.
 
 | Switch | Category                                 |
@@ -235,6 +237,28 @@ What plays depends on the kind of result:
 | a Qobuz release, track or playlist | the release, track or playlist                               |
 
 Among an artist's releases, =RET= plays the one you pick and =S-RET= shuffles it. The prompt names the keys, and mentions =M-RET= whenever there are artists among the results.
+
+** Backing out
+:PROPERTIES:
+:CUSTOM_ID: backing-out
+:END:
+
+A search can go up to three steps deep: the menu, the results, and an artist's releases opened with =M-RET=. The two quitting keys work differently:
+
+- =ESC= goes back one step, to where you were before.
+- =C-g= leaves the search at once, from any step.
+
+With =/ q=, a search for Chick Corea, and =M-RET= on the artist, three presses of =ESC= take you back out:
+
+| You are at        | =ESC= takes you to                        |
+|-------------------+-------------------------------------------|
+| the releases      | the Qobuz results, as they were           |
+| the Qobuz results | the search menu, with its switches as set |
+| the search menu   | where you were before =/=                 |
+
+Going back asks the server nothing new, so the results return at once, Qobuz ones too. =ESC= at the =Search Qobuz:= prompt goes back to the menu. To swap a release search for a track search, press =/ r=, then =ESC= and =t=.
+
+=ESC= is the same with any completion UI and needs no setup. A search not begun from the menu, such as =P= from the player, has no menu to go back to, so =ESC= leaves it. In a terminal, Emacs can mistake =ESC= for the start of a =Meta= key; use =C-g= there.
 
 * Qobuz
 :PROPERTIES:

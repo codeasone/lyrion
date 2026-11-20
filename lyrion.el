@@ -1766,10 +1766,71 @@ plays as it would with RET."
   (setq lyrion--open-chosen t)
   (call-interactively (key-binding (kbd "RET"))))
 
+(defvar lyrion--back nil
+  "Where \\`ESC' goes back to from the prompt showing: a catch tag, or nil.
+nil means there is nowhere to go back to, so \\`ESC' leaves the search.")
+
+(defun lyrion-search-escape ()
+  "Go back one step from the search prompt, or leave it from the first.
+An artist's releases go back to the results the artist was chosen from,
+and those to the search menu, when the search began there."
+  (interactive)
+  (if lyrion--back
+      (throw lyrion--back nil)
+    (abort-minibuffers)))
+
+(defun lyrion--back-to-here (function)
+  "Call FUNCTION, a minibuffer read, so that \\`ESC' in it comes back here.
+Return a list of its value, or nil when \\`ESC' came back."
+  (let ((tag (make-symbol "lyrion-back")))
+    (catch tag
+      (let ((lyrion--back tag))
+        (list (funcall function))))))
+
+(defun lyrion--with-back (function)
+  "Call FUNCTION, a search, going back to the search menu on \\`ESC'.
+That is when the menu called it: the menu opens again with the switches
+it had. Otherwise \\`ESC' leaves the search altogether."
+  (if (not (eq transient-current-command 'lyrion-search-menu))
+      (funcall function)
+    (let ((value (transient-args 'lyrion-search-menu)))
+      (unless (lyrion--back-to-here function)
+        (transient-setup 'lyrion-search-menu nil nil :value value)))))
+
+(defun lyrion--read-or-open (read open)
+  "Read a result with READ, and return it as (KIND . ITEM).
+READ returns (KIND . ITEM). When the result was accepted to be opened,
+OPEN, called with its KIND and ITEM, returns a function reading what it
+opens into, such as an artist's releases, or nil to take it as it is.
+\\`ESC' in what was opened goes back to READ's results."
+  (let ((chosen nil))
+    (while (not chosen)
+      (setq lyrion--shuffle-chosen nil
+            lyrion--open-chosen nil)
+      (pcase-let* ((`(,kind . ,item) (funcall read))
+                   (opened (and lyrion--open-chosen (funcall open kind item))))
+        (setq chosen (if opened
+                         (car (lyrion--back-to-here opened))
+                       (cons kind item)))))
+    chosen))
+
+(defvar-keymap lyrion-search-escape-map
+  :doc "Keys added to the minibuffer of every search prompt."
+  "<escape>" #'lyrion-search-escape)
+
+(defun lyrion--with-escape (function)
+  "Call FUNCTION, a minibuffer read, with `lyrion-search-escape-map'."
+  (minibuffer-with-setup-hook
+      (:append (lambda ()
+                 (use-local-map (make-composed-keymap lyrion-search-escape-map
+                                                      (current-local-map)))))
+    (funcall function)))
+
 (defvar-keymap lyrion-search-minibuffer-map
   :doc "Keys added to the minibuffer while searching.
 RET plays the result in order, S-RET plays it shuffled, and M-RET opens
-an artist into their releases."
+an artist into their releases. \\`ESC' goes back to the search menu."
+  :parent lyrion-search-escape-map
   "S-<return>" #'lyrion-search-shuffle-exit
   "M-<return>" #'lyrion-search-open-exit
   ;; What a terminal sends for M-RET.
@@ -1927,15 +1988,20 @@ choose how the release plays."
 RET plays it in order and S-RET shuffled. M-RET opens an album artist
 into their releases, to choose one; anything else it plays as RET does.
 SETS are as for `lyrion--read-item'."
-  (let ((lyrion--shuffle-chosen nil)
-        (lyrion--open-chosen nil))
-    (pcase-let ((`(,kind . ,item) (lyrion--read-item kinds prompt sets)))
-      (when (and lyrion--open-chosen (eq kind 'artist))
-        (pcase-setq `(,kind . ,item)
-                    (lyrion--read-release-by (lyrion--item-name kind item)
-                                             'release
-                                             (lyrion--artist-releases item))))
-      (lyrion--play-item kind item lyrion--shuffle-chosen))))
+  (lyrion--with-back
+   (lambda ()
+     (let ((lyrion--shuffle-chosen nil)
+           (lyrion--open-chosen nil))
+       (pcase-let ((`(,kind . ,item)
+                    (lyrion--read-or-open
+                     (lambda () (lyrion--read-item kinds prompt sets))
+                     (lambda (kind item)
+                       (and (eq kind 'artist)
+                            (lambda ()
+                              (lyrion--read-release-by
+                               (lyrion--item-name kind item) 'release
+                               (lyrion--artist-releases item))))))))
+         (lyrion--play-item kind item lyrion--shuffle-chosen))))))
 
 ;;; Plugins
 
@@ -1995,12 +2061,14 @@ With the connection down, nothing is asked, so the menu opens at once."
 
 (defun lyrion--read-in-order (prompt names)
   "Read one of NAMES, asking for PROMPT, offering them in their own order."
-  (completing-read prompt
-                   (lambda (string predicate action)
-                     (if (eq action 'metadata)
-                         '(metadata (display-sort-function . identity))
-                       (complete-with-action action names string predicate)))
-                   nil t))
+  (lyrion--with-escape
+   (lambda ()
+     (completing-read prompt
+                      (lambda (string predicate action)
+                        (if (eq action 'metadata)
+                            '(metadata (display-sort-function . identity))
+                          (complete-with-action action names string predicate)))
+                      nil t))))
 
 (defun lyrion--channel-name (item)
   "Return the name of ITEM, a Radio Paradise channel or stream, to show.
@@ -2017,25 +2085,27 @@ which lets the server skip songs."
   (lyrion--check-plugins)
   (unless (lyrion--radio-paradise-p)
     (lyrion--user-error "%s has no Radio Paradise plugin" lyrion-host))
-  (let* ((channels (lyrion--plugin-items "radioparadise"))
-         (name (lyrion--read-in-order
-                "Radio Paradise channel: "
-                (mapcar #'lyrion--channel-name channels)))
-         (channel (seq-find (lambda (channel)
-                              (equal (lyrion--channel-name channel) name))
-                            channels))
-         (stream (if (equal (lyrion--get channel "hasitems") "1")
-                     (seq-find (lambda (item)
-                                 (equal (lyrion--get item "isaudio") "1"))
-                               (lyrion--plugin-items
-                                "radioparadise" (lyrion--get channel "id")))
-                   channel)))
-    (unless stream
-      (lyrion--user-error "Radio Paradise has no stream for %s" name))
-    (lyrion--player-command
-     (list "radioparadise" "playlist" "play"
-           (concat "item_id:" (lyrion--get stream "id"))))
-    (lyrion--message "Playing %s" name)))
+  (lyrion--with-back
+   (lambda ()
+     (let* ((channels (lyrion--plugin-items "radioparadise"))
+            (name (lyrion--read-in-order
+                   "Radio Paradise channel: "
+                   (mapcar #'lyrion--channel-name channels)))
+            (channel (seq-find (lambda (channel)
+                                 (equal (lyrion--channel-name channel) name))
+                               channels))
+            (stream (if (equal (lyrion--get channel "hasitems") "1")
+                        (seq-find (lambda (item)
+                                    (equal (lyrion--get item "isaudio") "1"))
+                                  (lyrion--plugin-items
+                                   "radioparadise" (lyrion--get channel "id")))
+                      channel)))
+       (unless stream
+         (lyrion--user-error "Radio Paradise has no stream for %s" name))
+       (lyrion--player-command
+        (list "radioparadise" "playlist" "play"
+              (concat "item_id:" (lyrion--get stream "id"))))
+       (lyrion--message "Playing %s" name)))))
 
 ;;; Qobuz
 
@@ -2641,6 +2711,39 @@ tracks, all of them unless some are switched off."
   (interactive)
   (lyrion--search (lyrion--chosen-kinds nil) "Search"))
 
+(defun lyrion--search-qobuz ()
+  "Search Qobuz and play what is chosen, as `lyrion-search-qobuz' does."
+  (pcase-let* ((`(,term ,kinds ,count)
+                (lyrion--qobuz-term
+                 (string-trim (lyrion--with-escape
+                               (lambda () (read-string "Search Qobuz: "))))))
+               (kinds (or kinds (lyrion--chosen-kinds t))))
+    (when (string-empty-p term)
+      (lyrion--user-error "Nothing to search for"))
+    (message "Searching Qobuz for %s..." term)
+    (let ((results (seq-filter #'cdr (lyrion--qobuz-search term kinds count)))
+          (lyrion--shuffle-chosen nil)
+          (lyrion--open-chosen nil))
+      (message nil)
+      (unless results
+        (lyrion--user-error "Nothing on Qobuz matches %s" term))
+      (pcase-let ((`(,kind . ,item)
+                   (lyrion--read-or-open
+                    (lambda ()
+                      (lyrion--read-item
+                       (mapcar #'car results) "Qobuz"
+                       (mapcar (lambda (result)
+                                 (lyrion--candidates-of (car result)
+                                                        (cdr result)))
+                               results)))
+                    (lambda (kind item)
+                      (and (eq kind 'qobuz-artist)
+                           (lambda ()
+                             (lyrion--read-release-by
+                              (lyrion--item-name kind item) 'qobuz-release
+                              (lyrion--qobuz-artist-releases item))))))))
+        (lyrion--play-item kind item lyrion--shuffle-chosen)))))
+
 (defun lyrion-search-qobuz ()
   "Search Qobuz and play what is chosen.
 It searches the categories chosen in the search menu that Qobuz has:
@@ -2653,30 +2756,7 @@ songs, those Qobuz finds for their name, up to 200, and
 \\<lyrion-search-minibuffer-map>\\[lyrion-search-open-exit]
 opens the artist into their releases instead."
   (interactive)
-  (pcase-let* ((`(,term ,kinds ,count)
-                (lyrion--qobuz-term (string-trim (read-string "Search Qobuz: "))))
-               (kinds (or kinds (lyrion--chosen-kinds t))))
-    (when (string-empty-p term)
-      (lyrion--user-error "Nothing to search for"))
-    (message "Searching Qobuz for %s..." term)
-    (let ((results (seq-filter #'cdr (lyrion--qobuz-search term kinds count)))
-          (lyrion--shuffle-chosen nil)
-          (lyrion--open-chosen nil))
-      (message nil)
-      (unless results
-        (lyrion--user-error "Nothing on Qobuz matches %s" term))
-      (pcase-let ((`(,kind . ,item)
-                   (lyrion--read-item
-                    (mapcar #'car results) "Qobuz"
-                    (mapcar (lambda (result)
-                              (lyrion--candidates-of (car result) (cdr result)))
-                            results))))
-        (when (and lyrion--open-chosen (eq kind 'qobuz-artist))
-          (pcase-setq `(,kind . ,item)
-                      (lyrion--read-release-by
-                       (lyrion--item-name kind item) 'qobuz-release
-                       (lyrion--qobuz-artist-releases item))))
-        (lyrion--play-item kind item lyrion--shuffle-chosen)))))
+  (lyrion--with-back #'lyrion--search-qobuz))
 
 (transient-define-prefix lyrion-search-menu ()
   "Choose what to search the library for.
@@ -2716,7 +2796,10 @@ changed while choosing."
     ("<right>" lyrion-skip-forward :transient t
      :description
      (lambda () (format "Skip forward %s s" lyrion-skip-seconds)))
-    ("L" "Show or hide the lyrics" lyrion-lyrics :transient t)]])
+    ("L" "Show or hide the lyrics" lyrion-lyrics :transient t)]]
+  ;; Unshown: ESC leaves the menu, as it backs out of a search to it.
+  [:hide always
+   ("<escape>" "Quit" transient-quit-one)])
 
 (defun lyrion-search ()
   "Search the library and play what is chosen in place of the queue.

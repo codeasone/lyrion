@@ -988,6 +988,32 @@ is on two releases, so that it has two recordings.")
   (should (eq (lookup-key lyrion-lyrics-mode-map (kbd "P"))
               #'lyrion-radio-paradise)))
 
+(ert-deftest lyrion-test/escape-backs-out-to-the-search-menu ()
+  "ESC in a search the menu began goes back to it, with its switches."
+  (let ((reopened nil))
+    (cl-letf (((symbol-function 'transient-args) (lambda (_) '("tracks")))
+              ((symbol-function 'transient-setup)
+               (lambda (&rest args) (setq reopened args))))
+      (let ((transient-current-command 'lyrion-search-menu))
+        (lyrion--with-back #'lyrion-search-escape))
+      (should (equal reopened '(lyrion-search-menu nil nil :value ("tracks")))))))
+
+(ert-deftest lyrion-test/escape-elsewhere-leaves-the-search ()
+  (let ((aborted nil))
+    (cl-letf (((symbol-function 'abort-minibuffers)
+               (lambda () (setq aborted t))))
+      (let ((transient-current-command nil))
+        (lyrion--with-back #'lyrion-search-escape))
+      (should aborted))))
+
+(ert-deftest lyrion-test/escape-is-a-search-key ()
+  (should (eq (lookup-key lyrion-search-minibuffer-map [escape])
+              #'lyrion-search-escape))
+  (let ((layout (format "%S" (get 'lyrion-search-menu 'transient--layout))))
+    (should (string-search (concat ":key \"<escape>\" :description \"Quit\""
+                                   " :command transient-quit-one")
+                           layout))))
+
 (ert-deftest lyrion-test/search-menu-keeps-playback-keys ()
   "Playback keys work in the search menu, and keep it open."
   (let ((suffixes (lyrion-test--suffixes
@@ -2852,6 +2878,41 @@ Return the commands sent for the player and the texts offered first."
         (list (seq-filter (lambda (words) (equal (car words) "02:00:00:00:00:01"))
                           (cddr lyrion-test--received))
               offered)))))
+
+(ert-deftest lyrion-test/escape-backs-out-of-a-qobuz-artist-step-by-step ()
+  "From the menu, / q, an artist opened with M-RET: ESC goes back to the
+results, without asking Qobuz again, then ESC to the menu, as it was."
+  (lyrion-test--with-server #'lyrion-test--answer-qobuz
+    (lyrion-test--with-player
+      (should (lyrion-test--wait (lambda () (lyrion-test--shows "Für Alina"))))
+      (let ((prompts nil)
+            (asked nil)
+            (reopened nil)
+            (transient-current-command 'lyrion-search-menu))
+        (cl-letf (((symbol-function 'transient-args) (lambda (_) '("artists")))
+                  ((symbol-function 'transient-setup)
+                   (lambda (&rest args) (setq reopened args)))
+                  ((symbol-function 'read-string) (lambda (&rest _) "mahler 9"))
+                  ((symbol-function 'message) #'ignore)
+                  ((symbol-function 'completing-read)
+                   (lambda (prompt table &rest _)
+                     (push (car (split-string prompt " ")) prompts)
+                     (push (length lyrion-test--received) asked)
+                     (pcase (length prompts)
+                       ;; The results: open the artist, as M-RET does.
+                       (1 (setq lyrion--open-chosen t)
+                          (seq-find (lambda (text)
+                                      (string-prefix-p "Gustav Mahler" text))
+                                    (all-completions "" table)))
+                       ;; Their releases, then the results again: ESC.
+                       (_ (lyrion-search-escape))))))
+          (lyrion-search-qobuz))
+        (should (equal (reverse prompts) '("Qobuz" "Release" "Qobuz")))
+        ;; Back at the results, nothing more was asked of the server.
+        (should (= (nth 0 asked) (nth 1 asked)))
+        (should (equal reopened '(lyrion-search-menu nil nil :value ("artists"))))
+        (should-not (seq-find (lambda (words) (member "play" words))
+                              lyrion-test--received))))))
 
 (ert-deftest lyrion-test/a-qobuz-release-name-is-taken-apart ()
   (let ((item (lyrion--qobuz-release
