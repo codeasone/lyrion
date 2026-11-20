@@ -1848,6 +1848,56 @@ track plays it where it is, without loading the queue again."
                    (member '("02:00:00:00:00:01" "playlist" "index" "2")
                            (lyrion-test--commands-after-subscribing)))))))))
 
+(ert-deftest lyrion-test/a-track-chosen-keeps-the-mark-until-it-plays ()
+  "Just after a choice, a status naming the track before does not move the
+mark back; once the choice is overdue, the status has its way."
+  (lyrion-test--with-server #'lyrion-test--answer
+    (lyrion-test--with-player
+      (should (lyrion-test--wait (lambda () (lyrion-test--shows "Für Alina"))))
+      (let ((lyrion--queue-follow-interval 0.05)
+            (player (current-buffer))
+            (seen nil))
+        (with-current-buffer player
+          (push '("playlist_cur_index" . "1") lyrion--status))
+        (cl-letf (((symbol-function 'lyrion--select-on-open) #'ignore)
+                  ((symbol-function 'lyrion--scroll-start) #'ignore)
+                  ((symbol-function 'completing-read)
+                   (lambda (given table &rest _)
+                     (let* ((texts (all-completions "" table))
+                            (affix (alist-get 'affixation-function
+                                              (cdr (funcall table "" nil
+                                                            'metadata))))
+                            (mark (lambda ()
+                                    (seq-position (mapcar #'cadr
+                                                          (funcall affix texts))
+                                                  "▶ "))))
+                       (with-temp-buffer
+                         (insert given)
+                         (let ((vertico--input t)
+                               (vertico--index 2)
+                               (vertico--candidates texts))
+                           (run-hooks 'minibuffer-setup-hook)
+                           (call-interactively (key-binding (kbd "RET")))
+                           ;; The status still names the track before.
+                           (sleep-for 0.3)
+                           (push (funcall mark) seen)
+                           ;; The server plays the choice.
+                           (with-current-buffer player
+                             (push '("playlist_cur_index" . "2") lyrion--status))
+                           (sleep-for 0.2)
+                           (push (funcall mark) seen)
+                           ;; A choice the server never plays.
+                           (let ((lyrion--queue-confirm-seconds 0.2))
+                             (setq vertico--index 0)
+                             (call-interactively (key-binding (kbd "RET")))
+                             (push (funcall mark) seen)
+                             (sleep-for 0.5)
+                             (push (funcall mark) seen))
+                           (run-hooks 'minibuffer-exit-hook)))
+                       (signal 'quit nil)))))
+          (condition-case nil (lyrion-queue) (quit nil)))
+        (should (equal (reverse seen) '(2 2 0 2)))))))
+
 (ert-deftest lyrion-test/set-prompt-keeps-the-input ()
   (with-temp-buffer
     ;; As a minibuffer's prompt is.

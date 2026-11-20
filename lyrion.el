@@ -2703,6 +2703,11 @@ with its position as `playlist index'. Positions count from 0."
 (defvar lyrion--queue-follow-interval 1
   "Seconds between looks at the track playing, while the queue is open.")
 
+(defvar lyrion--queue-confirm-seconds 3
+  "Seconds the queue waits for the server to play a track chosen from it.
+Until then, a status still naming the track before is out of date, and
+the mark stays on the track chosen.")
+
 (defun lyrion--queue-prompt (current total)
   "Return the queue's prompt, playing CURRENT, a position, of TOTAL tracks."
   (if current
@@ -2828,8 +2833,20 @@ staying as it was; choosing the one playing starts it again."
                                    (display-sort-function . identity)
                                    (cycle-sort-function . identity))
                       (complete-with-action action texts string predicate))))
-           ;; The track playing may move on while the queue is open.
-           (update (lambda (position)
+           ;; A track chosen, and when, until the server says it plays.
+           (chosen nil)
+           (chosen-at nil)
+           ;; The track playing may move on while the queue is open. Just
+           ;; after a choice, the server may still name the track before.
+           (update (lambda (position &optional choice)
+                     (cond
+                      (choice (setq chosen position
+                                    chosen-at (float-time)))
+                      ((and chosen (not (eql position chosen))
+                            (< (- (float-time) chosen-at)
+                               lyrion--queue-confirm-seconds))
+                       (setq position nil))
+                      (t (setq chosen nil)))
                      (when (and position (not (eql position current)))
                        (setq current position)
                        (lyrion--set-prompt
@@ -2853,7 +2870,7 @@ staying as it was; choosing the one playing starts it again."
                    (if-let* ((choice (and (>= vertico--index 0)
                                           (nth vertico--index
                                                vertico--candidates))))
-                       (funcall update (funcall play choice))
+                       (funcall update (funcall play choice) t)
                      (user-error "Nothing chosen"))))
            (choice (minibuffer-with-setup-hook
                        (:append (lambda ()
