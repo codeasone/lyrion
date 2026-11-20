@@ -160,6 +160,13 @@ Results too long for the window are shortened with an ellipsis either
 way. Both need Vertico."
   :type 'boolean)
 
+(defcustom lyrion-search-recent 3
+  "How many recent choices lead the search results, under \"Recent\".
+They are the results Prescient remembers choosing, recently and often,
+when it sorts the completions. The other results keep their alphabetical
+order. 0 leaves every result in alphabetical order."
+  :type 'natnum)
+
 (defface lyrion-title '((t :weight bold :height 1.4))
   "Face of the track's title.")
 
@@ -1240,7 +1247,10 @@ TABLE maps each text, without properties, to (KIND . ITEM).")
 
 (declare-function nerd-icons-mdicon "nerd-icons")
 (declare-function prescient-completion-sort "prescient")
+(declare-function prescient-sort "prescient")
 (defvar prescient-sort-length-enable)
+(defvar prescient--history)
+(defvar prescient--frequency)
 (defvar vertico-sort-function)
 
 (defun lyrion--query (words callback &optional timeout)
@@ -1631,22 +1641,34 @@ an artist into their releases."
   ;; What a terminal sends for M-RET.
   "M-RET" #'lyrion-search-open-exit)
 
-(defun lyrion--ui-sort (candidates)
-  "Sort CANDIDATES by what was chosen recently and often, then alphabetically.
-That is Prescient's sort without its length rule, which means little for
-music; with another sort, CANDIDATES keep their alphabetical order."
-  (if (and (boundp 'vertico-sort-function)
-           (eq vertico-sort-function 'prescient-completion-sort)
-           (fboundp 'prescient-completion-sort))
-      (let ((prescient-sort-length-enable nil))
-        (prescient-completion-sort candidates))
-    candidates))
+(defun lyrion--remembered-p (text)
+  "Return non-nil when Prescient remembers choosing TEXT."
+  (or (and (boundp 'prescient--history) (gethash text prescient--history))
+      (and (boundp 'prescient--frequency) (gethash text prescient--frequency))))
+
+(defun lyrion--recent (candidates)
+  "Return the CANDIDATES chosen most recently and often.
+They are at most `lyrion-search-recent', in Prescient's order without its
+length rule, which means little for music. With another sort, there are
+none."
+  (when (and (> lyrion-search-recent 0)
+             (boundp 'vertico-sort-function)
+             (eq vertico-sort-function 'prescient-completion-sort)
+             (fboundp 'prescient-completion-sort))
+    ;; Prescient reads what it remembers when it first sorts.
+    (prescient-sort nil)
+    (let ((prescient-sort-length-enable nil))
+      (seq-take (prescient-completion-sort
+                 (seq-filter #'lyrion--remembered-p candidates))
+                lyrion-search-recent))))
 
 (defun lyrion--read-item (kinds prompt &optional sets)
   "Read an item of KINDS, asking for PROMPT, and return it as (KIND . ITEM).
 Results show their kind's icon, and are grouped by kind when there are
-several. SETS, results as from `lyrion--candidates-of', take the place of
-the library's, and keep their order, such as a search's relevance.
+several. Up to `lyrion-search-recent' recent choices lead, grouped apart.
+SETS, results as from `lyrion--candidates-of', take the place of the
+library's, and keep their order, such as a search's relevance, with no
+recent choices apart.
 \\<lyrion-search-minibuffer-map>
 \\[lyrion-search-shuffle-exit] accepts a result to be played shuffled, and
 \\[lyrion-search-open-exit] one to be opened, as an artist opens into their
@@ -1670,29 +1692,36 @@ artists among KINDS."
                                            " ")
                                    ""))
                            candidates))))
+         ;; The recent choices among the results last sorted.
+         (recent nil)
          (group (lambda (candidate transform)
-                  (if transform
-                      candidate
-                    (nth 1 (assq (car (funcall lookup candidate))
-                                 lyrion--kinds)))))
+                  (cond (transform candidate)
+                        ((member candidate recent) "Recent")
+                        (t (nth 1 (assq (car (funcall lookup candidate))
+                                        lyrion--kinds))))))
          ;; Recent choices first, then the alphabet; groups come in the order
          ;; of KINDS, each sorted so within.
          (sort (lambda (candidates)
-                 (let ((sorted (if ordered
-                                   candidates
-                                 (lyrion--ui-sort candidates))))
-                   (if (cdr kinds)
-                       (seq-sort-by (lambda (candidate)
-                                      (seq-position
-                                       kinds (car (funcall lookup candidate))))
-                                    #'< sorted)
-                     sorted))))
+                 (setq recent (and (not ordered) (lyrion--recent candidates)))
+                 (let ((rest (seq-remove (lambda (candidate)
+                                           (member candidate recent))
+                                         candidates)))
+                   (append recent
+                           (if (cdr kinds)
+                               (seq-sort-by (lambda (candidate)
+                                              (seq-position
+                                               kinds
+                                               (car (funcall lookup candidate))))
+                                            #'< rest)
+                             rest)))))
          (table (lambda (string predicate action)
                   (if (eq action 'metadata)
                       `(metadata (category . lyrion-item)
                                  (affixation-function . ,affix)
                                  (display-sort-function . ,sort)
-                                 ,@(and (cdr kinds)
+                                 ,@(and (or (cdr kinds)
+                                            (and (not ordered)
+                                                 (lyrion--recent texts)))
                                         `((group-function . ,group))))
                     (complete-with-action action texts string predicate)))))
     (or (funcall lookup

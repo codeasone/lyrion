@@ -1053,6 +1053,8 @@ is on two releases, so that it has two recordings.")
 
 (defvar vertico-sort-function)
 (defvar prescient-sort-length-enable)
+(defvar prescient--history)
+(defvar prescient--frequency)
 
 (defun lyrion-test--search-metadata (kinds prefix)
   "Read an item of KINDS choosing PREFIX, and return the table's metadata."
@@ -1061,12 +1063,16 @@ is on two releases, so that it has two recordings.")
   (cdr (funcall lyrion-test--table "" nil 'metadata)))
 
 (defmacro lyrion-test--with-fake-prescient (recent &rest body)
-  "Run BODY with a Prescient-like UI sort that puts RECENT first.
-Like Prescient, it would sort the rest by length unless told not to."
+  "Run BODY with a Prescient-like UI sort that remembers RECENT, a prefix.
+Like Prescient, it puts what it remembers first, and would sort the rest
+by length unless told not to."
   (declare (indent 1))
   `(let ((vertico-sort-function 'prescient-completion-sort)
          (prescient-sort-length-enable t))
-     (cl-letf (((symbol-function 'prescient-completion-sort)
+     (cl-letf (((symbol-function 'prescient-sort) #'ignore)
+               ((symbol-function 'lyrion--remembered-p)
+                (lambda (text) (string-prefix-p ,recent text)))
+               ((symbol-function 'prescient-completion-sort)
                 (lambda (candidates)
                   (let* ((recent (seq-filter (lambda (text)
                                                (string-prefix-p ,recent text))
@@ -1088,18 +1094,88 @@ Like Prescient, it would sort the rest by length unless told not to."
                                            (("id" . "3") ("artist" . "gamma"))))))
                    '("Alpha" "beta" "gamma")))))
 
+(defun lyrion-test--sorted (sort group texts)
+  "Sort TEXTS with SORT, and return each one's GROUP and name, in order."
+  (mapcar (lambda (text)
+            (cons (and group (funcall group text nil))
+                  (car (split-string text "  "))))
+          (funcall sort texts)))
+
 (ert-deftest lyrion-test/recent-results-first-then-alphabetical ()
   "Prescient's memory of recent choices leads; its length rule does not."
   (lyrion-test--with-fresh-library
     (lyrion-test--with-server #'lyrion-test--answer
-      (let* ((metadata (lyrion-test--search-metadata '(track) "Für Alina"))
-             (sort (alist-get 'display-sort-function metadata))
+      (lyrion-test--with-fake-prescient "Spiegel"
+        (let* ((metadata (lyrion-test--search-metadata '(track) "Für Alina"))
+               (texts (all-completions "" lyrion-test--table)))
+          (should (equal (lyrion-test--sorted
+                          (alist-get 'display-sort-function metadata)
+                          (alist-get 'group-function metadata)
+                          texts)
+                         '(("Recent" . "Spiegel im Spiegel")
+                           ("Recent" . "Spiegel im Spiegel")
+                           ("Tracks" . "Für Alina")
+                           ("Tracks" . "Let's Stay Together")))))))))
+
+(ert-deftest lyrion-test/recent-results-are-limited ()
+  (lyrion-test--with-fresh-library
+    (lyrion-test--with-server #'lyrion-test--answer
+      (lyrion-test--with-fake-prescient "Spiegel"
+        (let* ((lyrion-search-recent 1)
+               (metadata (lyrion-test--search-metadata '(track) "Für Alina"))
+               (texts (all-completions "" lyrion-test--table)))
+          ;; The other Spiegel im Spiegel goes back to its place.
+          (should (equal (lyrion-test--sorted
+                          (alist-get 'display-sort-function metadata)
+                          (alist-get 'group-function metadata)
+                          texts)
+                         '(("Recent" . "Spiegel im Spiegel")
+                           ("Tracks" . "Für Alina")
+                           ("Tracks" . "Let's Stay Together")
+                           ("Tracks" . "Spiegel im Spiegel")))))))))
+
+(ert-deftest lyrion-test/no-recent-results-leaves-the-alphabet ()
+  (lyrion-test--with-fresh-library
+    (lyrion-test--with-server #'lyrion-test--answer
+      (lyrion-test--with-fake-prescient "Spiegel"
+        (let* ((lyrion-search-recent 0)
+               (metadata (lyrion-test--search-metadata '(track) "Für Alina"))
+               (texts (all-completions "" lyrion-test--table)))
+          (should-not (alist-get 'group-function metadata))
+          (should (equal (funcall (alist-get 'display-sort-function metadata)
+                                  texts)
+                         texts)))))))
+
+(ert-deftest lyrion-test/one-kind-is-not-grouped-with-nothing-recent ()
+  (lyrion-test--with-fresh-library
+    (lyrion-test--with-server #'lyrion-test--answer
+      (lyrion-test--with-fake-prescient "Nothing like this"
+        (should-not (alist-get 'group-function
+                               (lyrion-test--search-metadata '(track)
+                                                             "Für Alina")))))))
+
+(ert-deftest lyrion-test/ordered-results-have-nothing-recent ()
+  "Results in an order of their own, such as a search's relevance, keep it."
+  (lyrion-test--with-fake-prescient "Zebra"
+    (let ((sets (list (lyrion--candidates-of
+                       'qobuz-release '((("album" . "Zebra")) (("album" . "Aardvark")))))))
+      (lyrion-test--choosing "Zebra"
+        (lyrion--read-item '(qobuz-release) "Release" sets))
+      (let* ((metadata (cdr (funcall lyrion-test--table "" nil 'metadata)))
              (texts (all-completions "" lyrion-test--table)))
-        (lyrion-test--with-fake-prescient "Spiegel"
-          (should (equal (mapcar (lambda (text) (car (split-string text "  ")))
-                                 (funcall sort texts))
-                         '("Spiegel im Spiegel" "Spiegel im Spiegel"
-                           "Für Alina" "Let's Stay Together"))))))))
+        (should-not (alist-get 'group-function metadata))
+        (should (equal (funcall (alist-get 'display-sort-function metadata)
+                                texts)
+                       texts))))))
+
+(ert-deftest lyrion-test/remembered-is-what-prescient-has-seen ()
+  (let ((prescient--history (make-hash-table :test #'equal))
+        (prescient--frequency (make-hash-table :test #'equal)))
+    (puthash "Für Alina" 0 prescient--history)
+    (puthash "Alina" 1.5 prescient--frequency)
+    (should (lyrion--remembered-p (propertize "Für Alina" 'face 'bold)))
+    (should (lyrion--remembered-p "Alina"))
+    (should-not (lyrion--remembered-p "Spiegel im Spiegel"))))
 
 (ert-deftest lyrion-test/another-ui-sort-gives-way-to-the-alphabet ()
   (lyrion-test--with-fresh-library
@@ -1111,28 +1187,25 @@ Like Prescient, it would sort the rest by length unless told not to."
         (should (equal (funcall sort texts) texts))))))
 
 (ert-deftest lyrion-test/everything-keeps-its-groups-in-order ()
-  "Album artists, then releases, then tracks; recent ones first in each."
+  "Recent ones, then album artists, then releases, then tracks."
   (lyrion-test--with-fresh-library
     (lyrion-test--with-server #'lyrion-test--answer
-      (let* ((metadata (lyrion-test--search-metadata '(artist release track)
-                                                     "Al Green"))
-             (sort (alist-get 'display-sort-function metadata))
-             (group (alist-get 'group-function metadata))
-             (texts (all-completions "" lyrion-test--table)))
-        ;; The recent release and track are pulled to the very front, and the
-        ;; groups must put each back in its place.
-        (lyrion-test--with-fake-prescient "Let's Stay Together"
-          (let ((sorted (funcall sort texts)))
-            (should (equal (seq-uniq (mapcar (lambda (text)
-                                               (funcall group text nil))
-                                             sorted))
-                           '("Album artists" "Releases" "Tracks")))
-            (should (equal (mapcar (lambda (text) (car (split-string text "  ")))
-                                   sorted)
-                           '("Al Green" "Arvo Pärt"
-                             "Let's Stay Together" "Alina"
-                             "Let's Stay Together" "Für Alina"
-                             "Spiegel im Spiegel" "Spiegel im Spiegel")))))))))
+      (lyrion-test--with-fake-prescient "Let's Stay Together"
+        (let* ((metadata (lyrion-test--search-metadata '(artist release track)
+                                                       "Al Green"))
+               (texts (all-completions "" lyrion-test--table)))
+          (should (equal (lyrion-test--sorted
+                          (alist-get 'display-sort-function metadata)
+                          (alist-get 'group-function metadata)
+                          texts)
+                         '(("Recent" . "Let's Stay Together")
+                           ("Recent" . "Let's Stay Together")
+                           ("Album artists" . "Al Green")
+                           ("Album artists" . "Arvo Pärt")
+                           ("Releases" . "Alina")
+                           ("Tracks" . "Für Alina")
+                           ("Tracks" . "Spiegel im Spiegel")
+                           ("Tracks" . "Spiegel im Spiegel")))))))))
 
 (ert-deftest lyrion-test/read-item-of-one-kind-is-not-grouped ()
   (lyrion-test--with-fresh-library

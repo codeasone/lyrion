@@ -197,7 +197,7 @@ Each result has an icon for its kind and some dimmed details: a track shows its 
 
 The details match what you type too, so =hiromi clair= narrows the many recordings of Clair de Lune to Hiromi's. In a release search, an artist's name lists their releases with their years, and a year such as =1983= lists what came out that year.
 
-Results are sorted alphabetically, ignoring case. An /Everything/ search groups them in this order: album artists, genres, playlists, releases, works and tracks, leaving out any you have switched off. When =prescient= sorts the completions, recent and frequent choices come first; its length rule is turned off, as length means little for music.
+Results are sorted alphabetically, ignoring case. An /Everything/ search groups them in this order: album artists, genres, playlists, releases, works and tracks, leaving out any you have switched off. When =prescient= sorts the completions, your three most recent and frequent choices among the results come first, under /Recent/, and the rest stay in alphabetical order. ~lyrion-search-recent~ sets how many; 0 leaves every result in alphabetical order. =prescient='s length rule is turned off, as length means little for music.
 
 #+attr_html: :width 900px
 #+attr_org: :width 900
@@ -339,6 +339,7 @@ Not supported yet. =lyrion= connects without a user name or password, which suit
 | ~lyrion-lyrics-hide-empty-lines~ | ~t~                      | leave out lines with no words                                                           |
 | ~lyrion-qobuz-results~           | ~100~                    | the most Qobuz results shown of each kind                                               |
 | ~lyrion-search-scroll~           | ~t~                      | scroll the selected result when too wide (=vertico=)                                    |
+| ~lyrion-search-recent~           | ~3~                      | the most recent choices shown first, under /Recent/ (=prescient=)                       |
 
 * Waiting for the server
 
