@@ -10,26 +10,24 @@ See what's playing, search your library, and control any player on the server.
 #+attr_org: :width 900
 [[file:images/screenshot.png]]
 
-=lyrion= is not affiliated with or endorsed by the Lyrion Music Server project.
-
 * What it does
 
 - The now-playing buffer shows the track on a /card/ centred in the window: the cover, track, artist, album and year, a progress bar, the track up next, and the player's state, including the stream's quality, such as =FLAC 24/96= or =MP3 320 kbps=.
 - Beside it, a pane shows the lyrics from =LRCLIB=. With timed lyrics, the line being sung lights up and stays in view.
 - =/= searches tracks, releases, album artists, genres, works or playlists, or all of them at once. It also searches Qobuz and plays Radio Paradise when the server has their plugins.
-- In search results, =RET= plays what's chosen, =S-RET= plays it shuffled, and =M-RET= on an artist opens their releases; =ESC= backs out a step, and =M-/= goes back to your last choice. See [[#moving-through-a-search][Moving through a search]].
+- In search results, =RET= plays what's chosen, =S-RET= plays it shuffled, and =M-RET= on a matching artist opens their releases; =ESC= backs out a step, and =M-/= goes back to your last choice. See [[#moving-through-a-search][Moving through a search]].
 - Single keys control playback, the volume, shuffle, repeat, smart crossfading, a sleep timer and the choice of player. [[#keys][Keys]] lists them all.
 - =I= inspects the queue in play order and jumps to any track in it. See [[#the-queue][The queue]].
 - =lyrion= can start =squeezelite= so this computer plays too, and the server keeps that player's settings between sessions.
 
-With =vertico=, a search shows every result before you type, so you can browse the library, then narrow it by artist, year or other details. See [[#searching][Searching]].
+Searches match details such as artist and year as well as names, so you can narrow the library as you type. See [[#searching][Searching]].
 
 * Design
 
 - =lyrion= is one file and needs only Emacs 30 or later, with its built-in =transient=. If =nerd-icons= is installed, it uses it for icons.
 - The server owns the queue, along with each player's shuffle, repeat and crossfade settings. Choosing something to play replaces the queue on the server, and =<= and =>= move through it there. =lyrion= can ask the server to shuffle the queue, but never adds, removes or moves tracks in it itself, nor keeps a copy; inspecting it with =I= fetches it afresh each time.
-- Nothing is polled. =lyrion= keeps one connection open to the server's CLI, which despite its name is a line-based text protocol over TCP, and subscribes to the player's status. The server sends the full status whenever anything changes, and Emacs counts the elapsed time in between.
-- Covers come from the server's web port and lyrics from =LRCLIB= over TLS. Both are fetched with a few lines of HTTP/1.0 over network processes rather than =url.el=, and every request has a timeout.
+- Nothing is polled. =lyrion= keeps one connection open to the server's CLI and subscribes to the player's status. The server sends the full status whenever anything changes, and Emacs counts the elapsed time in between.
+- Covers come from the server's web port and lyrics from =LRCLIB=, and every request has a timeout.
 - Search fetches the library from the server once per session, starting in the background as soon as the search menu opens. It does so over connections of its own, so a long listing never delays updates to the now-playing card.
 - The now-playing and lyrics buffers are =special-mode= buffers: single keys run commands, and there is nothing to edit. Both take the same keys.
 - Everything is meant to be done from the keyboard, and =?= lists every key. Mouse support is not a goal; whatever a click does comes from Emacs itself.
@@ -135,8 +133,6 @@ If the now-playing card stays on "Waiting for Emacs on <hostname> to connect" (o
 
 =squeezelite= keeps running after the now-playing buffer is closed, so the music doesn't stop. =M-x lyrion-local-player-stop= stops it, as does killing =*lyrion squeezelite*= or quitting Emacs.
 
-If a =squeezelite= with this computer's address is already running, =lyrion= uses it rather than starting another.
-
 * Keys
 :PROPERTIES:
 :CUSTOM_ID: keys
@@ -178,7 +174,7 @@ In the now-playing and lyrics buffers:
 
 =ESC= backs out of a search one step at a time, =C-g= leaves it at once, and =M-/= returns to your last choice; see [[#moving-through-a-search][Moving through a search]].
 
-Above the searches, switches choose the categories that an /Everything/ search (=/=) and a Qobuz search (=q=) include by default. Each shows as its key and name, lit when on and dimmed when off. All are on at first; toggle a switch's key to turn it off or on again. Searching one category, such as =t= for tracks, ignore the switches.
+Above the searches, switches choose the categories that an /Everything/ search (=/=) and a Qobuz search (=q=) include by default. All are on at first; toggle a switch's key to turn it off or on again. Searching one category, such as =t= for tracks, ignores the switches.
 
 | Switch | Category                                 |
 |--------+------------------------------------------|
@@ -205,7 +201,7 @@ The details match what you type too, so =hiromi clair= narrows the many recordin
 
 Results are sorted alphabetically, ignoring case. An /Everything/ search groups them in this order: album artists, genres, playlists, releases, works and tracks, leaving out any you have switched off.
 
-If you use =prescient= with =vertico=, through =vertico-prescient=, your three most recent and frequent choices among the results come first, under /Recent/, and the rest stay in alphabetical order. ~lyrion-search-recent~ sets how many; 0 leaves every result in alphabetical order. =prescient='s length rule is turned off, as length means little for music. Without it, the results stay alphabetical, grouped as above.
+If you use =prescient= with =vertico=, through =vertico-prescient=, your three most recent and frequent choices among the results come first, under /Recent/, and the rest stay in alphabetical order. ~lyrion-search-recent~ sets how many; 0 leaves every result in alphabetical order. Without it, the results stay alphabetical, grouped as above.
 
 #+attr_html: :width 900px
 #+attr_org: :width 900
@@ -222,7 +218,7 @@ Please keep in mind that search is only as good as your collection's tags.
 :CUSTOM_ID: choosing
 :END:
 
-Every search ends in the minibuffer, and the key you choose a result with decides what happens to it. The same three keys work in every search, of the library or of Qobuz:
+Every search ends in a completion list, and the key you choose a result with decides what happens to it. The same three keys work in every search, of the library or of Qobuz:
 
 | Key     | What happens to the result                                                     |
 |---------+--------------------------------------------------------------------------------|
@@ -252,7 +248,7 @@ Among an artist's releases, =RET= plays the one you pick and =S-RET= shuffles it
 
 /This part is opinionated./ =lyrion= treats a search as a path you can walk back along, and return to later. Emacs prompts do not usually behave this way. If it does not suit you, =C-g= always leaves at once, as anywhere in Emacs.
 
-A search is a path of up to three steps: the menu, the results, and an artist's releases opened with =M-RET=. Three keys move along it:
+A search is a path of two steps, the menu and the results, and a third when =M-RET= opens an artist's releases. Three keys move along it:
 
 - =ESC= goes back one step.
 - =C-g= leaves the search at once, from any step.
@@ -268,24 +264,15 @@ With =/ q=, a search for Chick Corea, and =M-RET= on the artist, three presses o
 | the Qobuz results | the search menu, with its switches as set |
 | the search menu   | where you were before =/=                 |
 
-To swap a release search for a track search, press =/ r=, then =ESC= and =t=.
+Changed your mind after =/ r=? Press =ESC=, then =t= for a track search instead.
 
 *** M-/: back to your last choice
 
-After a search plays something, =M-/= in the player, the lyrics or the search menu opens that search again, at the step where you chose. The whole list shows, with the result you chose selected. From there =ESC= goes back as it did before, each step on the choice you made at it.
+After a search plays something, =M-/= opens it again at the step where you chose, with your choice selected in the full list. =ESC= then goes back as before, each step selecting what you chose there.
 
 Say you press =/ a=, choose Chick Corea with =M-RET=, then play one of his releases. Later, =M-/= shows his releases again, on the one you played. =ESC= takes you to the album artists, on Chick Corea, so you can choose another artist.
 
 All of this is far easier to use than to describe. Press =M-/= a few times and it will make sense long before this section does ;-)
-
-*** The small print
-
-- =ESC= asks nothing new of the server, so lists return at once. With =M-/=, Qobuz results are the ones found before, and Qobuz is not searched again; only an artist's releases are fetched afresh.
-- =ESC= at the =Search Qobuz:= prompt goes back to the menu. =M-/= passes over that prompt to the results.
-- =M-/= remembers the last search only, for the Emacs session. Choosing something new in it, or in another search, replaces it.
-- A search not begun from the menu, such as =P= from the player, has no menu to go back to, so =ESC= leaves it.
-- The keys work with any completion UI and need no setup. Only =vertico= shows the selection on your earlier choice; others start at the top.
-- In a terminal, Emacs can mistake =ESC= for the start of a =Meta= key. Use =C-g= there.
 
 * Qobuz
 :PROPERTIES:
@@ -311,7 +298,7 @@ Anything else after a colon, as in =Mahler: Symphony No. 9=, is searched as type
 #+attr_org: :width 900
 [[file:images/qobuz-search.png]]
 
-=lyrion= asks the server whether it has the plugin the first time the search menu opens in a session, waiting up to two seconds. If the server does not answer in time, it asks again at the next search; if you install the plugin while =lyrion= is running, =g= in the now-playing buffer asks again.
+If you install the plugin while =lyrion= is running, press =g= in the now-playing buffer so the search menu finds it.
 
 The audio does not pass through =LMS=. For each track, =LMS= asks Qobuz for a signed address on its content delivery network, and the player streams from there over HTTPS. Covers come from Qobuz through =LMS='s image proxy.
 
@@ -347,7 +334,7 @@ When the server has the [[https://radioparadise.com][Radio Paradise]] plugin, =P
 #+attr_org: :width 900
 [[file:images/radio-paradise-channels.png]]
 
-=LMS= relays the stream one song at a time, each with its own title and cover, so the card follows the songs as the channel plays. A channel has no order to change, so the card leaves out shuffle, repeat and the track up next, and the =?= menu greys out their keys. Nor has it a queue to inspect, so =I= does nothing either. The server makes no smart crossfade in a queue of one, which a channel is, so the card leaves that out too, and =X= does nothing and is greyed out; Radio Paradise blends its songs itself anyway.
+=LMS= relays the stream one song at a time, each with its own title and cover, so the card follows the songs as the channel plays. A channel has no queue or order, so the card leaves out shuffle, repeat, crossfade and the track up next, and their keys are greyed out.
 
 #+attr_html: :width 762px
 #+attr_org: :width 762
@@ -364,8 +351,6 @@ Shuffling reorders the queue on the server, which then plays it straight through
 
 - The track playing is marked ▶, and with =vertico= the cursor starts on it, so the tracks around it are a few keys away.
 - Each line shows the track's title, artist and album, and all of them match what you type, so =planet= finds any title with that word.
-- Lines have no numbers, which could be confused with a track's number on its release; the prompt says where you are instead, as in /playing 12 of 40/.
-- A track queued twice has /(2)/ after its second copy.
 
 =RET= plays the chosen track where it stands, without reloading or reshuffling the queue; on the track already playing, it starts it again. With =vertico=, the queue stays open, so you can hop between tracks until one suits, then close it with =C-g=. Other completion UIs close the queue as the track starts.
 
@@ -381,13 +366,13 @@ Shuffling reorders the queue on the server, which then plays it straight through
 
 * Lyrics
 
-=lyrion= fetches lyrics from [[https://lrclib.net][LRCLIB]] only while they are shown, sending the track's artist, title, album and length. It asks for an exact match first, then takes the search result closest in length, within ten seconds. A track with no artist tag, common on compilations, skips the exact match, which needs one, and is searched for by title alone. Searches leave out notes in brackets at the end of a title, such as /(Single Version)/ or /[Remastered 2009]/, which LRCLIB's titles rarely have. Answers, misses included, are kept for the session; failed requests are not, so =g= tries again. /Could not reach LRCLIB/ means no answer came; an error LRCLIB answers with shows its HTTP status.
+=lyrion= fetches lyrics from [[https://lrclib.net][LRCLIB]] only while they are shown, sending the track's artist, title, album and length. Answers are kept for the session; =g= in the lyrics fetches them again.
 
-Timed lyrics are best effort. Anyone can add lyrics to LRCLIB, anonymously, so timings are only as good as whoever synced them, and the closest match may be a different edit or master. Lines can light up a little early or late, or drift as the song goes on. =lyrion= lights each line 0.3 s early, as singers tend to come in slightly ahead.
+Timed lyrics are best effort. Anyone can add lyrics to LRCLIB, anonymously, so timings are only as good as whoever synced them, and the match found may be a different edit or master. Lines can light up a little early or late, or drift as the song goes on. =lyrion= lights each line 0.3 s early, as singers tend to come in slightly ahead.
 
 * Authentication
 
-Not supported yet. =lyrion= connects without a user name or password, which suits a home server with password protection off. Adding it would be straightforward: the CLI accepts =login USER PASSWORD= as its first command, and the web port accepts basic authentication.
+Not supported yet. =lyrion= connects without a user name or password, which suits a home server with password protection off.
 
 * Options
 
@@ -435,7 +420,7 @@ Apart from Qobuz searches, a wait is noticeable only when the server stops answe
 
 * Tested on
 
-=lyrion= has only been tested on my own system, described below. Elsewhere it may need changes.
+=lyrion= has only been tested on my own system:
 
 | Part          | What I use                                                                              |
 |---------------+-----------------------------------------------------------------------------------------|
@@ -450,7 +435,7 @@ I haven't tried it on macOS, Windows or Wayland, with a completion UI other than
 
 * AI assistance
 
-=lyrion= was developed with Claude Opus 5.5 in Claude Code: it wrote the code, the tests and most of this documentation. I set the design, guided the implementation and the quality checks, reviewed the code, and tested it against my own =LMS= server.
+=lyrion= was developed with Claude Opus 5.5 in Claude Code: it wrote the code, the tests and the first drafts of this documentation. I set the design, guided the implementation and the quality checks, reviewed the code, revised the documentation, and tested =lyrion= against my own =LMS= server.
 
 I never intended to share "AI-written" work on my GitHub profile, but =lyrion= has worked out so nicely that I feel compelled to.
 
@@ -459,6 +444,8 @@ If it serves no other purpose than to inspire remixes of your own, that's reason
 * Licence
 
 =lyrion= is dedicated to the public domain under [[https://creativecommons.org/publicdomain/zero/1.0/][CC0 1.0 Universal]]: use it, change it and share it however you like, with no need to ask or credit anyone. No copyright is claimed, since the code was written by an AI model; where the law does not allow a waiver, CC0 grants the same freedoms as a licence. The full text is in =LICENSE=.
+
+=lyrion= is not affiliated with or endorsed by the Lyrion Music Server project.
 
 * Development
 
