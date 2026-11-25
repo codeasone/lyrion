@@ -458,9 +458,9 @@ A fix is proposed upstream in [[https://github.com/ralph-irving/squeezelite/pull
 | Part          | What I use                                                                              |
 |---------------+-----------------------------------------------------------------------------------------|
 | Desktop       | Linux Mint 22.3, kernel 7.0, X11                                                        |
-| Emacs         | GNU Emacs 30.2 (GTK3, native compilation), with =vertico=, =prescient= and =nerd-icons= |
+| Emacs         | GNU Emacs 31.1 (GTK3, native compilation), with =vertico=, =prescient= and =nerd-icons= |
 | Sound         | PipeWire 1.0.5, through its PulseAudio server                                           |
-| =squeezelite= | 1.9.9, and 2.0.0-1613 with the fix from [[https://github.com/ralph-irving/squeezelite/pull/286][#286]]                                  |
+| =squeezelite= | 1.9.9, and 2.0.0-1613 with the fix from [[https://github.com/ralph-irving/squeezelite/pull/286][#286]]                                            |
 | Server        | =LMS= 9.1.2, the =lmscommunity/lyrionmusicserver= Docker image on Debian 12             |
 | Players       | this computer, through =squeezelite=, and a [[https://www.wiimhome.com/wiimultra/overview][WiiM Ultra]]                                  |
 
