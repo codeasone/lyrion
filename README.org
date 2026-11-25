@@ -133,6 +133,8 @@ If the now-playing card stays on "Waiting for Emacs on <hostname> to connect" (o
 
 =squeezelite= keeps running after the now-playing buffer is closed, so the music doesn't stop. =M-x lyrion-local-player-stop= stops it, as does killing =*lyrion squeezelite*= or quitting Emacs.
 
+With crossfading on, the first track after =squeezelite= starts cannot be paused, because of a bug in =squeezelite=; see [[#known-issues][Known issues]].
+
 * Keys
 :PROPERTIES:
 :CUSTOM_ID: keys
@@ -364,6 +366,8 @@ Shuffling reorders the queue on the server, which then plays it straight through
 
 =X= turns smart crossfading on or off. In =LMS='s words, "successive tracks played from the same album will not use the Crossfade setting", so albums stay gapless, though before =LMS= 9.2 it may not fade between albums either. The fade's length, shown on the card as in /smart crossfade 10 s/, is the player's own setting, in its audio settings in the =LMS= web interface.
 
+On this computer's player, crossfading stops the first track after =squeezelite= starts from being paused; see [[#known-issues][Known issues]].
+
 * Lyrics
 
 =lyrion= fetches lyrics from [[https://lrclib.net][LRCLIB]] only while they are shown, sending the track's artist, title, album and length. Answers are kept for the session; =g= in the lyrics fetches them again.
@@ -417,6 +421,24 @@ A few commands need an answer from the server before they can show anything, and
 | =M-RET= on a Qobuz artist | their releases, which the server asks Qobuz for | 0.06 to 0.24 s | 15 s           |
 
 Apart from Qobuz searches, a wait is noticeable only when the server stops answering. After a second, the echo area says what =lyrion= is waiting for, and =C-g= stops the wait at once. When =lyrion= already knows that the connection is down, it says so straight away instead of waiting.
+
+* Known issues
+:PROPERTIES:
+:CUSTOM_ID: known-issues
+:END:
+
+** The first track after =squeezelite= starts cannot be paused when crossfading is on
+
+With crossfading on, the first track this computer's player plays after =squeezelite= starts cannot be paused. =SPC= does nothing, and neither does pausing from the =LMS= web interface or any other app. Pausing works again once the next track begins. This happens every time =squeezelite= starts while the server has something to play, such as after restarting Emacs, because the server then carries on with the queue.
+
+It is a bug in =squeezelite= itself, not in =lyrion= or =LMS=, and is present in =squeezelite= 1.9.9 and in the latest version at the time of writing, 2.0.0-1613. With crossfading on, =squeezelite= enlarges its output buffer as the first track starts and loses track of where that track begins, so it never tells the server the track has started. Until it does, the server treats the player as still buffering and ignores pausing. Later tracks are not affected, and nor are other players such as network streamers.
+
+Until a fixed =squeezelite= is available:
+
+- Press =>= to skip to the next track, or wait for it. Pausing then works for the rest of the session.
+- Or turn crossfading off for this computer's player with =X=. This takes effect from the next time =squeezelite= starts; it does not free a track that is already affected.
+
+But who wants to turn off crossfade for a shuffled playlist... :)
 
 * Tested on
 
