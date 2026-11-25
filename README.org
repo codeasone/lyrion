@@ -433,12 +433,23 @@ With crossfading on, the first track this computer's player plays after =squeeze
 
 It is a bug in =squeezelite= itself, not in =lyrion= or =LMS=, and is present in =squeezelite= 1.9.9 and in the latest version at the time of writing, 2.0.0-1613. With crossfading on, =squeezelite= enlarges its output buffer as the first track starts and loses track of where that track begins, so it never tells the server the track has started. Until it does, the server treats the player as still buffering and ignores pausing. Later tracks are not affected, and nor are other players such as network streamers.
 
-Until a fixed =squeezelite= is available:
+A fix is proposed upstream in [[https://github.com/ralph-irving/squeezelite/pull/286][squeezelite#286]]. Until a release includes it:
 
 - Press =>= to skip to the next track, or wait for it. Pausing then works for the rest of the session.
-- Or turn crossfading off for this computer's player with =X=. This takes effect from the next time =squeezelite= starts; it does not free a track that is already affected.
+- Or turn crossfading off for this computer's player with =X=. This takes effect from the next time =squeezelite= starts.
+- Or build =squeezelite= with the fix and point ~lyrion-squeezelite-program~ at it. On Debian or Ubuntu, for example:
 
-But who wants to turn off crossfade for a shuffled playlist... :)
+  #+begin_src sh
+  sudo apt install libasound2-dev libflac-dev libmad0-dev libmpg123-dev libvorbis-dev libfaad-dev libopusfile-dev
+  git clone -b codeasone/crossfade-first-track-start https://github.com/codeasone/squeezelite.git ~/src/squeezelite
+  make -C ~/src/squeezelite
+  #+end_src
+
+  #+begin_src elisp
+  (setopt lyrion-squeezelite-program (expand-file-name "~/src/squeezelite/squeezelite"))
+  #+end_src
+
+  Once a =squeezelite= release includes the fix, go back to the packaged one.
 
 * Tested on
 
@@ -449,7 +460,7 @@ But who wants to turn off crossfade for a shuffled playlist... :)
 | Desktop       | Linux Mint 22.3, kernel 7.0, X11                                                        |
 | Emacs         | GNU Emacs 30.2 (GTK3, native compilation), with =vertico=, =prescient= and =nerd-icons= |
 | Sound         | PipeWire 1.0.5, through its PulseAudio server                                           |
-| =squeezelite= | 1.9.9                                                                                   |
+| =squeezelite= | 1.9.9, and 2.0.0-1613 with the fix from [[https://github.com/ralph-irving/squeezelite/pull/286][#286]]                                  |
 | Server        | =LMS= 9.1.2, the =lmscommunity/lyrionmusicserver= Docker image on Debian 12             |
 | Players       | this computer, through =squeezelite=, and a [[https://www.wiimhome.com/wiimultra/overview][WiiM Ultra]]                                  |
 
